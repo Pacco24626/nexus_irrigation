@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "New irrigation system",
+        "description": "Name the system. You can create more than one: garden, vegetable patch, greenhouse.",
+        "data": {
+          "name": "System name"
+        }
+      },
+      "zone": {
+        "title": "Zone {number}",
+        "description": "Pick the zone valve and its base duration. The duration stays editable from the dashboard.",
+        "data": {
+          "name": "Zone name",
+          "entity_id": "Valve",
+          "minutes": "Base duration",
+          "add_another": "Add another zone"
+        }
+      },
+      "rain": {
+        "title": "Rain source",
+        "description": "How the system decides that watering is not needed.",
+        "data": {
+          "rain_mode": "Source"
+        }
+      },
+      "rain_details": {
+        "title": "Rain settings",
+        "description": "With a numeric sensor or a forecast, the cycle is skipped when millimetres exceed the threshold. With a binary_sensor, being on is enough.",
+        "data": {
+          "rain_entity": "Entity",
+          "rain_threshold": "Threshold",
+          "rain_hours": "Forecast hours to add up"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "A system with this name already exists."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "System configuration",
+        "menu_options": {
+          "zones": "Zones",
+          "rain": "Rain source"
+        }
+      },
+      "zone": {
+        "title": "Zone {number}",
+        "description": "Zones are declared again from scratch: confirm or correct each one, then untick to finish.",
+        "data": {
+          "name": "Zone name",
+          "entity_id": "Valve",
+          "minutes": "Base duration",
+          "add_another": "Add another zone"
+        }
+      },
+      "rain": {
+        "title": "Rain source",
+        "data": {
+          "rain_mode": "Source"
+        }
+      },
+      "rain_details": {
+        "title": "Rain settings",
+        "data": {
+          "rain_entity": "Entity",
+          "rain_threshold": "Threshold",
+          "rain_hours": "Forecast hours to add up"
+        }
+      }
+    }
+  },
+  "selector": {
+    "rain_mode": {
+      "options": {
+        "none": "None: always water",
+        "sensor": "Rain sensor or gauge",
+        "weather": "Weather forecast"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "state": {
+          "idle": "Idle",
+          "running": "Watering",
+          "rain_skipped": "Skipped for rain"
+        }
+      }
+    }
+  }
+}

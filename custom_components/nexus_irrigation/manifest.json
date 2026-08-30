@@ -1,0 +1,13 @@
+{
+  "domain": "nexus_irrigation",
+  "name": "Nexus Irrigation",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["persistent_notification"],
+  "documentation": "https://github.com/Pacco24626/nexus_irrigation",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Pacco24626/nexus_irrigation/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

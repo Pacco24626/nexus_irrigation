@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nuovo impianto",
+        "description": "Dai un nome all'impianto. Puoi crearne piu' d'uno: giardino, orto, serra.",
+        "data": {
+          "name": "Nome impianto"
+        }
+      },
+      "zone": {
+        "title": "Zona {number}",
+        "description": "Scegli la valvola della zona e la durata base. La durata resta modificabile dalla dashboard.",
+        "data": {
+          "name": "Nome zona",
+          "entity_id": "Valvola",
+          "minutes": "Durata base",
+          "add_another": "Aggiungi un'altra zona"
+        }
+      },
+      "rain": {
+        "title": "Sorgente pioggia",
+        "description": "Come deve capire l'impianto che non serve irrigare.",
+        "data": {
+          "rain_mode": "Sorgente"
+        }
+      },
+      "rain_details": {
+        "title": "Dettagli pioggia",
+        "description": "Con un sensore numerico o le previsioni, il ciclo salta quando i millimetri superano la soglia. Con un binary_sensor basta che sia attivo.",
+        "data": {
+          "rain_entity": "Entita'",
+          "rain_threshold": "Soglia",
+          "rain_hours": "Ore di previsione da sommare"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Esiste gia' un impianto con questo nome."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configurazione impianto",
+        "menu_options": {
+          "zones": "Zone",
+          "rain": "Sorgente pioggia"
+        }
+      },
+      "zone": {
+        "title": "Zona {number}",
+        "description": "Le zone vengono ridichiarate da capo: conferma o correggi ognuna, e togli la spunta per terminare.",
+        "data": {
+          "name": "Nome zona",
+          "entity_id": "Valvola",
+          "minutes": "Durata base",
+          "add_another": "Aggiungi un'altra zona"
+        }
+      },
+      "rain": {
+        "title": "Sorgente pioggia",
+        "data": {
+          "rain_mode": "Sorgente"
+        }
+      },
+      "rain_details": {
+        "title": "Dettagli pioggia",
+        "data": {
+          "rain_entity": "Entita'",
+          "rain_threshold": "Soglia",
+          "rain_hours": "Ore di previsione da sommare"
+        }
+      }
+    }
+  },
+  "selector": {
+    "rain_mode": {
+      "options": {
+        "none": "Nessuna: irriga sempre",
+        "sensor": "Sensore pioggia o pluviometro",
+        "weather": "Previsioni meteo"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "state": {
+          "idle": "Inattivo",
+          "running": "In irrigazione",
+          "rain_skipped": "Saltato per pioggia"
+        }
+      }
+    }
+  }
+}
