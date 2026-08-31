@@ -22,6 +22,7 @@ from .const import (
     KEY_DAY_PREFIX,
     KEY_ENABLE,
     KEY_LAST_CYCLE,
+    KEY_MASTER,
     KEY_NEXT_CYCLE,
     KEY_RAIN,
     KEY_SEASONAL,
@@ -99,6 +100,11 @@ class StatusSensor(IrrigationEntity, SensorEntity):
             "start_button": self._entity_id("button", KEY_START_CYCLE),
             "stop_button": self._entity_id("button", KEY_STOP),
             "rain_entity": self._entity_id("binary_sensor", KEY_RAIN),
+            "master_entity": self._entity_id("binary_sensor", KEY_MASTER)
+            if controller.master_entity
+            else None,
+            "master_valve": controller.master_entity,
+            "master_open": controller.master_open,
             "day_entities": [
                 self._entity_id("switch", f"{KEY_DAY_PREFIX}{day}") for day in DAY_KEYS
             ],

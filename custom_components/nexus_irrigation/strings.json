@@ -18,6 +18,22 @@
           "add_another": "Aggiungi un'altra zona"
         }
       },
+      "master": {
+        "title": "Valvola master o pompa",
+        "description": "Molti impianti hanno un'elettrovalvola generale a monte dei settori, o un rele' che avvia la pompa. Se il tuo non ce l'ha, lascia la spunta vuota.",
+        "data": {
+          "use_master": "L'impianto ha una valvola master o una pompa"
+        }
+      },
+      "master_details": {
+        "title": "Master: entita' e ritardi",
+        "description": "Il master si apre DOPO il settore e si chiude PRIMA: mandare in pressione una pompa contro valvole chiuse causa colpo d'ariete e fa intervenire il pressostato. I ritardi predefiniti di 3 secondi vanno bene quasi sempre; alzali se le valvole sono lente.",
+        "data": {
+          "master_entity": "Valvola master o rele' pompa",
+          "master_lead": "Ritardo apertura master dopo il settore",
+          "master_lag": "Ritardo chiusura settore dopo il master"
+        }
+      },
       "rain": {
         "title": "Sorgente pioggia",
         "description": "Come deve capire l'impianto che non serve irrigare.",
@@ -45,7 +61,8 @@
         "title": "Configurazione impianto",
         "menu_options": {
           "zones": "Zone",
-          "rain": "Sorgente pioggia"
+          "rain": "Sorgente pioggia",
+          "master": "Valvola master"
         }
       },
       "zone": {
@@ -56,6 +73,22 @@
           "entity_id": "Valvola",
           "minutes": "Durata base",
           "add_another": "Aggiungi un'altra zona"
+        }
+      },
+      "master": {
+        "title": "Valvola master o pompa",
+        "description": "Molti impianti hanno un'elettrovalvola generale a monte dei settori, o un rele' che avvia la pompa. Se il tuo non ce l'ha, lascia la spunta vuota.",
+        "data": {
+          "use_master": "L'impianto ha una valvola master o una pompa"
+        }
+      },
+      "master_details": {
+        "title": "Master: entita' e ritardi",
+        "description": "Il master si apre DOPO il settore e si chiude PRIMA: mandare in pressione una pompa contro valvole chiuse causa colpo d'ariete e fa intervenire il pressostato. I ritardi predefiniti di 3 secondi vanno bene quasi sempre; alzali se le valvole sono lente.",
+        "data": {
+          "master_entity": "Valvola master o rele' pompa",
+          "master_lead": "Ritardo apertura master dopo il settore",
+          "master_lag": "Ritardo chiusura settore dopo il master"
         }
       },
       "rain": {

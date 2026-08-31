@@ -16,6 +16,9 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_ADD_ANOTHER,
+    CONF_MASTER_ENTITY,
+    CONF_MASTER_LAG,
+    CONF_MASTER_LEAD,
     CONF_RAIN_ENTITY,
     CONF_RAIN_HOURS,
     CONF_RAIN_MODE,
@@ -25,6 +28,9 @@ from .const import (
     CONF_ZONE_MINUTES,
     CONF_ZONE_NAME,
     CONF_ZONES,
+    CONF_USE_MASTER,
+    DEFAULT_MASTER_LAG,
+    DEFAULT_MASTER_LEAD,
     DEFAULT_MINUTES,
     DEFAULT_RAIN_HOURS,
     DEFAULT_RAIN_THRESHOLD,
@@ -50,6 +56,38 @@ def _zone_schema(number: int) -> vol.Schema:
                 )
             ),
             vol.Optional(CONF_ADD_ANOTHER, default=False): bool,
+        }
+    )
+
+
+_MASTER_SCHEMA = vol.Schema({vol.Required(CONF_USE_MASTER, default=False): bool})
+
+
+def _master_details_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """Entita' del master e ritardi di sequenza."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_MASTER_ENTITY, default=defaults.get(CONF_MASTER_ENTITY)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["valve", "switch"])
+            ),
+            vol.Required(
+                CONF_MASTER_LEAD, default=defaults.get(CONF_MASTER_LEAD, DEFAULT_MASTER_LEAD)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=120, step=1, unit_of_measurement="s",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Required(
+                CONF_MASTER_LAG, default=defaults.get(CONF_MASTER_LAG, DEFAULT_MASTER_LAG)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=120, step=1, unit_of_measurement="s",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
         }
     )
 
@@ -132,12 +170,40 @@ class NexusIrrigationConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             if add_another:
                 return await self.async_step_zone()
-            return await self.async_step_rain()
+            return await self.async_step_master()
 
         return self.async_show_form(
             step_id="zone",
             data_schema=_zone_schema(len(self._zones) + 1),
             description_placeholders={"number": str(len(self._zones) + 1)},
+        )
+
+    async def async_step_master(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Valvola master o pompa: facoltativa, si salta con la spunta."""
+        if user_input is not None:
+            if user_input[CONF_USE_MASTER]:
+                return await self.async_step_master_details()
+            return await self.async_step_rain()
+
+        return self.async_show_form(step_id="master", data_schema=_MASTER_SCHEMA)
+
+    async def async_step_master_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            self._data.update(
+                {
+                    CONF_MASTER_ENTITY: user_input[CONF_MASTER_ENTITY],
+                    CONF_MASTER_LEAD: int(user_input[CONF_MASTER_LEAD]),
+                    CONF_MASTER_LAG: int(user_input[CONF_MASTER_LAG]),
+                }
+            )
+            return await self.async_step_rain()
+
+        return self.async_show_form(
+            step_id="master_details", data_schema=_master_details_schema({})
         )
 
     async def async_step_rain(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -183,7 +249,7 @@ class NexusIrrigationOptionsFlow(OptionsFlow):
         return {**self.config_entry.data, **self.config_entry.options}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["zones", "rain"])
+        return self.async_show_menu(step_id="init", menu_options=["zones", "master", "rain"])
 
     # --- Zone ----------------------------------------------------------------
     async def async_step_zones(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -217,6 +283,39 @@ class NexusIrrigationOptionsFlow(OptionsFlow):
             step_id="zone",
             data_schema=schema,
             description_placeholders={"number": str(index + 1)},
+        )
+
+    # --- Master ---------------------------------------------------------------
+    async def async_step_master(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            if user_input[CONF_USE_MASTER]:
+                return await self.async_step_master_details()
+            # Togliendo la spunta il master viene dimenticato: da qui in poi
+            # l'impianto torna a comandare i soli settori.
+            return self._save({CONF_MASTER_ENTITY: None})
+
+        schema = self.add_suggested_values_to_schema(
+            _MASTER_SCHEMA, {CONF_USE_MASTER: bool(self._current.get(CONF_MASTER_ENTITY))}
+        )
+        return self.async_show_form(step_id="master", data_schema=schema)
+
+    async def async_step_master_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self._save(
+                {
+                    CONF_MASTER_ENTITY: user_input[CONF_MASTER_ENTITY],
+                    CONF_MASTER_LEAD: int(user_input[CONF_MASTER_LEAD]),
+                    CONF_MASTER_LAG: int(user_input[CONF_MASTER_LAG]),
+                }
+            )
+
+        return self.async_show_form(
+            step_id="master_details",
+            data_schema=_master_details_schema(self._current),
         )
 
     # --- Pioggia --------------------------------------------------------------

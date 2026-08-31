@@ -7,6 +7,7 @@ dall'interfaccia. Nessuno YAML da scrivere.
 
 - **Zone in numero libero**, ognuna con la sua valvola (`valve.*` o `switch.*`) e la sua durata.
 - **Sequenza garantita**: le zone irrigano una alla volta, mai in parallelo, per non dimezzare la pressione.
+- **Valvola master o pompa** facoltativa, con sequenza di apertura e chiusura corretta.
 - **Fattore stagionale**: un solo cursore scala tutte le durate. 60% a maggio, 130% a luglio.
 - **Salta se piove**: sensore pioggia, pluviometro o previsioni meteo, con soglia in millimetri.
 - **Giorni della settimana** selezionabili singolarmente.
@@ -29,7 +30,10 @@ Il config flow chiede, nell'ordine:
 1. **Nome impianto** — puoi crearne più d'uno (giardino, orto, serra), ognuno indipendente.
 2. **Zone** — nome, valvola, durata base. La spunta *"Aggiungi un'altra zona"* ricicla lo
    step: nessun limite al numero di zone.
-3. **Sorgente pioggia** — una fra:
+3. **Valvola master o pompa** — una spunta. Se l'impianto ha un'elettrovalvola generale
+   a monte dei settori o un relè che avvia la pompa, la spunti e scegli l'entità; altrimenti
+   tiri dritto. Puoi regolare i due ritardi di sequenza, 3 secondi di default.
+4. **Sorgente pioggia** — una fra:
    - *Nessuna*: irriga sempre.
    - *Sensore*: un `binary_sensor` (attivo = piove) o un `sensor` numerico confrontato con la soglia in mm.
    - *Previsioni meteo*: somma i millimetri previsti nelle prossime N ore da un'entità `weather.*`.
@@ -55,6 +59,30 @@ Per ogni impianto viene creato un dispositivo con:
 | `sensor.<impianto>_prossimo_ciclo` | Timestamp del prossimo avvio |
 | `binary_sensor.<impianto>_pioggia` | Esito dell'ultimo controllo pioggia |
 | `binary_sensor.<impianto>_in_irrigazione` | Acceso mentre una zona irriga |
+| `binary_sensor.<impianto>_master` | Solo con master configurato: stato della valvola generale |
+
+## Valvola master e pompa
+
+Facoltativa. Quando c'è, la sequenza di ogni zona diventa:
+
+```
+apre il settore → attende il lead → avvia il master → irriga →
+ferma il master → attende il lag → chiude il settore
+```
+
+**L'ordine non è arbitrario.** Avviare una pompa contro valvole ancora chiuse la manda in
+pressione a vuoto: colpo d'ariete alla partenza e, sulle autoclavi, intervento del
+pressostato. Alla chiusura vale lo specchio: si toglie pressione e solo dopo si chiude il
+settore, così la colonna d'acqua si ferma contro una valvola aperta.
+
+I ritardi predefiniti sono 3 secondi per parte e vanno bene quasi sempre; alzali se le
+elettrovalvole sono lente. Il conto alla rovescia della zona parte a valle dell'avvio del
+master, quindi i minuti impostati sono minuti d'acqua, non di sequenza.
+
+Il master viene chiuso **per primo** da ogni arresto — pulsante, riavvio, scaricamento
+dell'integrazione — e il watchdog lo sorveglia come le altre valvole: se resta aperto
+senza un ciclo attivo viene chiuso, perché su un impianto con autoclave significa pompa
+che gira a secco.
 
 ## Sicurezza
 

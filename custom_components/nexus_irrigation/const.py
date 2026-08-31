@@ -25,6 +25,11 @@ CONF_ZONE_ENTITY = "entity_id"
 CONF_ZONE_MINUTES = "minutes"
 CONF_ADD_ANOTHER = "add_another"
 
+CONF_USE_MASTER = "use_master"
+CONF_MASTER_ENTITY = "master_entity"
+CONF_MASTER_LEAD = "master_lead"
+CONF_MASTER_LAG = "master_lag"
+
 CONF_RAIN_MODE = "rain_mode"
 CONF_RAIN_ENTITY = "rain_entity"
 CONF_RAIN_THRESHOLD = "rain_threshold"
@@ -54,6 +59,7 @@ KEY_LAST_CYCLE = "last_cycle"
 KEY_NEXT_CYCLE = "next_cycle"
 KEY_RAIN = "rain"
 KEY_RUNNING = "running"
+KEY_MASTER = "master"
 
 KEY_DAY_PREFIX = "day_"
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -75,6 +81,12 @@ PAUSE_BETWEEN_ZONES = 15
 # la stia pilotando viene chiusa dopo questo numero di rilevazioni.
 WATCHDOG_INTERVAL = 60
 WATCHDOG_STRIKES = 2
+
+# Master/pompa: ritardo fra apertura della zona e avvio del master, e fra
+# arresto del master e chiusura della zona. Servono a non mandare mai in
+# pressione una pompa contro valvole chiuse.
+DEFAULT_MASTER_LEAD = 3
+DEFAULT_MASTER_LAG = 3
 
 DEFAULT_MINUTES = 15
 DEFAULT_SEASONAL = 100.0

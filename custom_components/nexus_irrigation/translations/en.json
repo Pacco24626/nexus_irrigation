@@ -18,6 +18,22 @@
           "add_another": "Add another zone"
         }
       },
+      "master": {
+        "title": "Master valve or pump",
+        "description": "Many systems have a main valve upstream of the zones, or a relay that starts a pump. If yours does not, leave the box unticked.",
+        "data": {
+          "use_master": "This system has a master valve or a pump"
+        }
+      },
+      "master_details": {
+        "title": "Master: entity and delays",
+        "description": "The master opens AFTER the zone and closes BEFORE it: pressurising a pump against closed valves causes water hammer and trips the pressure switch. The 3 second defaults are fine in most cases; raise them if the valves are slow.",
+        "data": {
+          "master_entity": "Master valve or pump relay",
+          "master_lead": "Delay before starting the master",
+          "master_lag": "Delay before closing the zone"
+        }
+      },
       "rain": {
         "title": "Rain source",
         "description": "How the system decides that watering is not needed.",
@@ -45,7 +61,8 @@
         "title": "System configuration",
         "menu_options": {
           "zones": "Zones",
-          "rain": "Rain source"
+          "rain": "Rain source",
+          "master": "Master valve"
         }
       },
       "zone": {
@@ -56,6 +73,22 @@
           "entity_id": "Valve",
           "minutes": "Base duration",
           "add_another": "Add another zone"
+        }
+      },
+      "master": {
+        "title": "Master valve or pump",
+        "description": "Many systems have a main valve upstream of the zones, or a relay that starts a pump. If yours does not, leave the box unticked.",
+        "data": {
+          "use_master": "This system has a master valve or a pump"
+        }
+      },
+      "master_details": {
+        "title": "Master: entity and delays",
+        "description": "The master opens AFTER the zone and closes BEFORE it: pressurising a pump against closed valves causes water hammer and trips the pressure switch. The 3 second defaults are fine in most cases; raise them if the valves are slow.",
+        "data": {
+          "master_entity": "Master valve or pump relay",
+          "master_lead": "Delay before starting the master",
+          "master_lag": "Delay before closing the zone"
         }
       },
       "rain": {

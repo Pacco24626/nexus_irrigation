@@ -27,6 +27,9 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_MASTER_ENTITY,
+    CONF_MASTER_LAG,
+    CONF_MASTER_LEAD,
     CONF_RAIN_ENTITY,
     CONF_RAIN_HOURS,
     CONF_RAIN_MODE,
@@ -36,6 +39,8 @@ from .const import (
     CONF_ZONE_MINUTES,
     CONF_ZONE_NAME,
     CONF_ZONES,
+    DEFAULT_MASTER_LAG,
+    DEFAULT_MASTER_LEAD,
     DEFAULT_RAIN_HOURS,
     DEFAULT_RAIN_THRESHOLD,
     DEFAULT_SEASONAL,
@@ -92,6 +97,12 @@ class IrrigationController:
             )
             for z in cfg.get(CONF_ZONES, [])
         ]
+        # Valvola master o rele' pompa: facoltativo, comune sugli impianti
+        # con autoclave o con elettrovalvola generale a monte dei settori.
+        self.master_entity: str | None = cfg.get(CONF_MASTER_ENTITY)
+        self.master_lead: int = int(cfg.get(CONF_MASTER_LEAD, DEFAULT_MASTER_LEAD))
+        self.master_lag: int = int(cfg.get(CONF_MASTER_LAG, DEFAULT_MASTER_LAG))
+
         self.rain_mode: str = cfg.get(CONF_RAIN_MODE, RAIN_NONE)
         self.rain_entity: str | None = cfg.get(CONF_RAIN_ENTITY)
         self.rain_threshold: float = float(
@@ -112,6 +123,7 @@ class IrrigationController:
         self.last_cycle: datetime | None = None
         self.next_cycle: datetime | None = None
         self.rain_detected: bool = False
+        self.master_open: bool = False
 
         self._task: asyncio.Task | None = None
         self._unsub_schedule: CALLBACK_TYPE | None = None
@@ -309,7 +321,14 @@ class IrrigationController:
                     continue
                 await self._async_run_zone(zone, seconds)
                 if index < len(self.zones) - 1:
-                    await asyncio.sleep(PAUSE_BETWEEN_ZONES)
+                    # La pausa deve coprire anche il lag del master, altrimenti
+                    # il settore successivo aprirebbe mentre il precedente si
+                    # sta ancora chiudendo, con due zone in pressione insieme.
+                    await asyncio.sleep(
+                        max(PAUSE_BETWEEN_ZONES, self.master_lag + 5)
+                        if self.master_entity
+                        else PAUSE_BETWEEN_ZONES
+                    )
 
             self.last_cycle = dt_util.now()
             self.status = STATUS_IDLE
@@ -335,26 +354,56 @@ class IrrigationController:
     async def _async_run_zone(self, zone: Zone, seconds: int) -> None:
         """Apre, attende, chiude.
 
-        Il close sta in un finally, quindi vale anche in caso di annullamento
-        del task: e' la differenza sostanziale rispetto a un delay in uno
-        script YAML, che se interrotto lascia la valvola aperta.
+        La chiusura sta in un finally, quindi vale anche in caso di
+        annullamento del task: e' la differenza sostanziale rispetto a un
+        delay in uno script YAML, che se interrotto lascia la valvola aperta.
         """
         self.status = STATUS_RUNNING
         self.active_zone = zone.id
-        self.zone_ends_at = dt_util.now() + timedelta(seconds=seconds)
+        # Il conto alla rovescia parte a valle dell'avvio del master: i
+        # secondi impostati sono secondi d'acqua, non di sequenza.
+        self.zone_ends_at = dt_util.now() + timedelta(
+            seconds=seconds + (self.master_lead if self.master_entity else 0)
+        )
         self.notify()
         try:
-            await self._async_set_valve(zone.entity_id, True)
+            await self._async_begin_zone(zone)
+            self.zone_ends_at = dt_util.now() + timedelta(seconds=seconds)
+            self.notify()
             await asyncio.sleep(seconds)
         finally:
             # Non si attende qui: durante un cancel l'await verrebbe
-            # interrotto a sua volta e la valvola resterebbe aperta.
-            self.hass.async_create_task(
-                self._async_set_valve(zone.entity_id, False)
-            )
+            # interrotto a sua volta e le valvole resterebbero aperte.
+            self.hass.async_create_task(self._async_end_zone(zone))
             self.active_zone = None
             self.zone_ends_at = None
             self.notify()
+
+    async def _async_begin_zone(self, zone: Zone) -> None:
+        """Apertura ordinata: prima il settore, poi il master.
+
+        L'ordine non e' arbitrario. Avviare una pompa contro valvole ancora
+        chiuse la manda in pressione a vuoto: colpo d'ariete alla partenza e,
+        sulle autoclavi, intervento del pressostato.
+        """
+        await self._async_set_valve(zone.entity_id, True)
+        if not self.master_entity:
+            return
+        if self.master_lead:
+            await asyncio.sleep(self.master_lead)
+        await self._async_set_master(True)
+
+    async def _async_end_zone(self, zone: Zone) -> None:
+        """Chiusura ordinata: prima il master, poi il settore.
+
+        Speculare all'apertura: si toglie pressione e solo dopo si chiude il
+        settore, cosi' la colonna d'acqua si ferma contro una valvola aperta.
+        """
+        if self.master_entity:
+            await self._async_set_master(False)
+            if self.master_lag:
+                await asyncio.sleep(self.master_lag)
+        await self._async_set_valve(zone.entity_id, False)
 
     # -------------------------------------------------------------------------
     # Valvole
@@ -372,7 +421,17 @@ class IrrigationController:
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("%s: comando %s su %s fallito: %s", self.name, service, entity_id, err)
 
+    async def _async_set_master(self, open_it: bool) -> None:
+        """Comanda la valvola master o il rele' della pompa."""
+        if not self.master_entity:
+            return
+        await self._async_set_valve(self.master_entity, open_it)
+        self.master_open = open_it
+        self.notify()
+
     async def async_close_all(self) -> None:
+        """Chiusura generale: prima il master, poi i settori."""
+        await self._async_set_master(False)
         for zone in self.zones:
             await self._async_set_valve(zone.entity_id, False)
 
@@ -391,28 +450,47 @@ class IrrigationController:
         """
         for zone in self.zones:
             owned = self.is_running and self.active_zone == zone.id
-            if owned or not self.valve_is_open(zone.entity_id):
-                self._strikes[zone.id] = 0
-                continue
-
-            self._strikes[zone.id] = self._strikes.get(zone.id, 0) + 1
-            if self._strikes[zone.id] < WATCHDOG_STRIKES:
-                continue
-
-            self._strikes[zone.id] = 0
-            _LOGGER.warning(
-                "%s: watchdog chiude %s, aperta senza ciclo attivo",
-                self.name,
-                zone.entity_id,
+            await self._async_watch_valve(
+                zone.id, zone.entity_id, f"della zona {zone.name}", owned
             )
-            await self._async_set_valve(zone.entity_id, False)
-            persistent_notification.async_create(
-                self.hass,
-                f"La valvola della zona {zone.name} risultava aperta senza un "
-                f"ciclo attivo ed e' stata chiusa dal watchdog.",
-                title="Irrigazione: chiusura di emergenza",
-                notification_id=f"{DOMAIN}_{self.entry.entry_id}_wd_{zone.id}",
+
+        if self.master_entity:
+            # Il master e' legittimo solo mentre una zona sta irrigando: se
+            # resta aperto da solo, la pompa sta girando a secco.
+            await self._async_watch_valve(
+                "master",
+                self.master_entity,
+                "master",
+                self.is_running and self.active_zone is not None,
             )
+
+    async def _async_watch_valve(
+        self, key: str, entity_id: str, etichetta: str, owned: bool
+    ) -> None:
+        """Chiude una valvola aperta che il controller non sta pilotando."""
+        if owned or not self.valve_is_open(entity_id):
+            self._strikes[key] = 0
+            return
+
+        self._strikes[key] = self._strikes.get(key, 0) + 1
+        if self._strikes[key] < WATCHDOG_STRIKES:
+            return
+
+        self._strikes[key] = 0
+        _LOGGER.warning(
+            "%s: watchdog chiude %s, aperta senza ciclo attivo", self.name, entity_id
+        )
+        await self._async_set_valve(entity_id, False)
+        if key == "master":
+            self.master_open = False
+            self.notify()
+        persistent_notification.async_create(
+            self.hass,
+            f"La valvola {etichetta} risultava aperta senza un ciclo attivo "
+            f"ed e' stata chiusa dal watchdog.",
+            title="Irrigazione: chiusura di emergenza",
+            notification_id=f"{DOMAIN}_{self.entry.entry_id}_wd_{key}",
+        )
 
     # -------------------------------------------------------------------------
     # Pioggia
