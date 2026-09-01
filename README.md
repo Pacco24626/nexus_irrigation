@@ -1,3 +1,5 @@
+<img src="icons/logo.png" alt="Nexus Irrigation" width="360">
+
 # Nexus Irrigation
 
 Centralina irrigazione multizona per Home Assistant, configurabile interamente
