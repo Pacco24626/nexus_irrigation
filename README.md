@@ -101,3 +101,7 @@ dell'integrazione.
 
 [Nexus Irrigation Card](https://github.com/Pacco24626/nexus_irrigation_card) — facoltativa.
 Senza di essa l'impianto si comanda benissimo con le card standard.
+
+## Licenza
+
+Apache 2.0 — Copyright 2026 Automatic Systems. Vedi [LICENSE](LICENSE).
