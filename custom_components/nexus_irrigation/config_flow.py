@@ -21,6 +21,7 @@ from .const import (
     CONF_MASTER_LEAD,
     CONF_RAIN_ENTITY,
     CONF_RAIN_HOURS,
+    CONF_RAIN_HOURS_PAST,
     CONF_RAIN_MODE,
     CONF_RAIN_THRESHOLD,
     CONF_ZONE_ENTITY,
@@ -33,6 +34,7 @@ from .const import (
     DEFAULT_MASTER_LEAD,
     DEFAULT_MINUTES,
     DEFAULT_RAIN_HOURS,
+    DEFAULT_RAIN_HOURS_PAST,
     DEFAULT_RAIN_THRESHOLD,
     DOMAIN,
     RAIN_MODES,
@@ -130,6 +132,17 @@ def _rain_details_schema(mode: str, defaults: dict[str, Any]) -> vol.Schema:
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1, max=48, step=1, unit_of_measurement="h",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        fields[
+            vol.Required(
+                CONF_RAIN_HOURS_PAST,
+                default=defaults.get(CONF_RAIN_HOURS_PAST, DEFAULT_RAIN_HOURS_PAST),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, max=48, step=1, unit_of_measurement="h",
                 mode=selector.NumberSelectorMode.BOX,
             )
         )

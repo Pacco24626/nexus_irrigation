@@ -34,6 +34,7 @@ CONF_RAIN_MODE = "rain_mode"
 CONF_RAIN_ENTITY = "rain_entity"
 CONF_RAIN_THRESHOLD = "rain_threshold"
 CONF_RAIN_HOURS = "rain_hours"
+CONF_RAIN_HOURS_PAST = "rain_hours_past"
 
 # --- Modalita' sorgente pioggia ----------------------------------------------
 RAIN_NONE = "none"
@@ -92,4 +93,13 @@ DEFAULT_MINUTES = 15
 DEFAULT_SEASONAL = 100.0
 DEFAULT_RAIN_THRESHOLD = 2.0
 DEFAULT_RAIN_HOURS = 12
+
+# Ore all'indietro considerate nel bilancio della pioggia. Il servizio delle
+# previsioni restituisce solo il futuro: la pioggia gia' caduta se la
+# costruisce l'integrazione campionando l'ora corrente, quindi esiste solo da
+# quando l'integrazione e' in funzione.
+DEFAULT_RAIN_HOURS_PAST = 12
+
+# Ogni quanto si campiona la precipitazione dell'ora in corso.
+RAIN_SAMPLE_MINUTES = 15
 DEFAULT_START_HOUR = 6

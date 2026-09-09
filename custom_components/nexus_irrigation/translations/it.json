@@ -47,7 +47,8 @@
         "data": {
           "rain_entity": "Entita'",
           "rain_threshold": "Soglia",
-          "rain_hours": "Ore di previsione da sommare"
+          "rain_hours": "Ore di previsione da sommare",
+          "rain_hours_past": "Ore passate da sommare"
         }
       }
     },
@@ -102,7 +103,8 @@
         "data": {
           "rain_entity": "Entita'",
           "rain_threshold": "Soglia",
-          "rain_hours": "Ore di previsione da sommare"
+          "rain_hours": "Ore di previsione da sommare",
+          "rain_hours_past": "Ore passate da sommare"
         }
       }
     }

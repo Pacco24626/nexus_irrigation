@@ -15,6 +15,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DAY_KEYS,
@@ -115,8 +117,13 @@ class StatusSensor(IrrigationEntity, SensorEntity):
         }
 
 
-class LastCycleSensor(IrrigationEntity, SensorEntity):
-    """Quando e' finito l'ultimo ciclo andato a buon fine."""
+class LastCycleSensor(IrrigationEntity, SensorEntity, RestoreEntity):
+    """Quando e' finito l'ultimo ciclo andato a buon fine.
+
+    Il valore vive nel controller, che riparte vuoto a ogni avvio: senza
+    ripristino l'ultimo ciclo spariva a ogni riavvio di Home Assistant, anche
+    se l'irrigazione era andata regolarmente la notte prima.
+    """
 
     _attr_name = "Ultimo ciclo"
     _attr_icon = "mdi:history"
@@ -124,6 +131,16 @@ class LastCycleSensor(IrrigationEntity, SensorEntity):
 
     def __init__(self, controller: IrrigationController) -> None:
         super().__init__(controller, KEY_LAST_CYCLE)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if self.controller.last_cycle is not None:
+            return
+        last = await self.async_get_last_state()
+        if last and last.state not in (None, "unknown", "unavailable"):
+            ripristinato = dt_util.parse_datetime(last.state)
+            if ripristinato is not None:
+                self.controller.last_cycle = ripristinato
 
     @property
     def native_value(self) -> datetime | None:

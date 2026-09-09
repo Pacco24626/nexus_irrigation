@@ -47,7 +47,8 @@
         "data": {
           "rain_entity": "Entity",
           "rain_threshold": "Threshold",
-          "rain_hours": "Forecast hours to add up"
+          "rain_hours": "Forecast hours to add up",
+          "rain_hours_past": "Past hours to add up"
         }
       }
     },
@@ -102,7 +103,8 @@
         "data": {
           "rain_entity": "Entity",
           "rain_threshold": "Threshold",
-          "rain_hours": "Forecast hours to add up"
+          "rain_hours": "Forecast hours to add up",
+          "rain_hours_past": "Past hours to add up"
         }
       }
     }

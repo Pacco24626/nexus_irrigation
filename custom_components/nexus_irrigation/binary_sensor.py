@@ -11,6 +11,7 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN, KEY_MASTER, KEY_RAIN, KEY_RUNNING, RAIN_NONE
 from .controller import IrrigationController
@@ -27,7 +28,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class RainBinarySensor(IrrigationEntity, BinarySensorEntity):
+class RainBinarySensor(IrrigationEntity, BinarySensorEntity, RestoreEntity):
     """Esito dell'ultimo controllo pioggia.
 
     Vale quanto rilevato all'ultimo tentativo di ciclo: non e' un sensore
@@ -40,6 +41,20 @@ class RainBinarySensor(IrrigationEntity, BinarySensorEntity):
 
     def __init__(self, controller: IrrigationController) -> None:
         super().__init__(controller, KEY_RAIN)
+
+    async def async_added_to_hass(self) -> None:
+        """Rimette in circolo il registro della pioggia caduta.
+
+        Vive solo in memoria: senza questo, ogni riavvio azzererebbe le ore
+        passate proprio nei giorni di maltempo, quando servono.
+        """
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last and isinstance(last.attributes.get("rain_log"), dict):
+            self.controller.rain_log.update(
+                {k: float(v) for k, v in last.attributes["rain_log"].items()}
+            )
+            self.controller.rain_recent = self.controller.recent_rain_mm()
 
     @property
     def available(self) -> bool:
@@ -56,6 +71,13 @@ class RainBinarySensor(IrrigationEntity, BinarySensorEntity):
             "source": self.controller.rain_entity,
             "threshold_mm": self.controller.rain_threshold,
             "forecast_hours": self.controller.rain_hours,
+            "past_hours": self.controller.rain_hours_past,
+            "recent_mm": self.controller.rain_recent,
+            "forecast_mm": self.controller.rain_forecast,
+            "total_mm": round(
+                self.controller.rain_recent + self.controller.rain_forecast, 1
+            ),
+            "rain_log": self.controller.rain_log,
         }
 
 
