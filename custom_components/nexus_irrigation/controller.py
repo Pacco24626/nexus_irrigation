@@ -206,11 +206,28 @@ class IrrigationController:
                 self._async_sample_rain,
                 timedelta(minutes=RAIN_SAMPLE_MINUTES),
             )
+            # Un primo campione subito. Senza, dopo ogni riavvio l'ET0 resta
+            # indisponibile per un quarto d'ora e il bilancio gira sul consumo
+            # di ripiego, che in una giornata di pioggia sbaglia di tre volte.
+            if self.hass.is_running:
+                self.hass.async_create_task(self._async_sample_rain())
+            else:
+                self.hass.bus.async_listen_once(
+                    EVENT_HOMEASSISTANT_STARTED, self._async_sample_on_started
+                )
         self.reschedule()
 
     async def _async_close_on_started(self, _event) -> None:
         """Chiusura di sicurezza appena Home Assistant e' completamente avviato."""
         await self.async_close_all()
+
+    async def _async_sample_on_started(self, _event) -> None:
+        """Primo campione meteo ad avvio completato.
+
+        Non prima: durante il boot l'integrazione meteo potrebbe non aver
+        ancora registrato il servizio delle previsioni.
+        """
+        await self._async_sample_rain()
 
     async def async_shutdown(self) -> None:
         """Chiude tutto: e' l'ultima cosa che gira prima di scaricare l'entry."""
