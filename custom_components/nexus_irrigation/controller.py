@@ -26,19 +26,25 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
+from .evapotraspirazione import K_RS_COSTIERO, K_RS_INTERNO, et0
+
 from .const import (
     CONF_MASTER_ENTITY,
     CONF_MASTER_LAG,
     CONF_MASTER_LEAD,
     CONF_RAIN_ENTITY,
     CONF_RAIN_HOURS,
+    CONF_COSTA,
     CONF_DAILY_ET,
+    CONF_ET0_SENSOR,
+    CONF_KC,
     CONF_PRECIP_RATE,
     CONF_RAIN_HOURS_PAST,
     CONF_RAIN_MODE,
     CONF_RAIN_THRESHOLD,
     CONF_RESERVE_THRESHOLD,
     CONF_SOIL_CAPACITY,
+    CONF_TIPO_PRATO,
     CONF_ZONE_ENTITY,
     CONF_ZONE_ID,
     CONF_ZONE_MINUTES,
@@ -53,6 +59,10 @@ from .const import (
     DEFAULT_RAIN_THRESHOLD,
     DEFAULT_RESERVE_THRESHOLD,
     DEFAULT_SOIL_CAPACITY,
+    KC_MACROTERME,
+    KC_MICROTERME,
+    PRATO_MACROTERME,
+    PRATO_MICROTERME,
     DEFAULT_SEASONAL,
     DEFAULT_START_HOUR,
     DOMAIN,
@@ -155,6 +165,11 @@ class IrrigationController:
         self.precip_rate: float = float(
             cfg.get(CONF_PRECIP_RATE, DEFAULT_PRECIP_RATE)
         )
+        self.tipo_prato: str = cfg.get(CONF_TIPO_PRATO, PRATO_MICROTERME)
+        self.kc: float = self._kc_da_config(cfg)
+        self.costa: bool = bool(cfg.get(CONF_COSTA, False))
+        self.et0_sensor: str | None = cfg.get(CONF_ET0_SENSOR)
+        self.et0_oggi: float | None = None
         # Si parte a meta' serbatoio: ne' assetato ne' zuppo, cosi' i primi
         # giorni il modello non prende una decisione forte su niente.
         self.reserve: float = self.soil_capacity / 2
@@ -557,6 +572,95 @@ class IrrigationController:
         )
 
 
+
+    @staticmethod
+    def _kc_da_config(cfg: dict) -> float:
+        """Il coefficiente colturale, dal tipo di prato o dal valore libero."""
+        tipo = cfg.get(CONF_TIPO_PRATO, PRATO_MICROTERME)
+        if tipo == PRATO_MICROTERME:
+            return KC_MICROTERME
+        if tipo == PRATO_MACROTERME:
+            return KC_MACROTERME
+        return float(cfg.get(CONF_KC, KC_MICROTERME))
+
+    # -------------------------------------------------------------------------
+    # Evapotraspirazione
+    # -------------------------------------------------------------------------
+    @property
+    def consumo_giornaliero(self) -> float:
+        """Millimetri che il prato consuma in un giorno.
+
+        Con l'ET0 disponibile il fattore stagionale non entra: la stagione la
+        conta gia' il calcolo, che a dicembre da' mezzo millimetro e a luglio
+        cinque. Applicarlo di nuovo la conterebbe due volte.
+        """
+        if self.et0_oggi is not None:
+            return self.et0_oggi * self.kc
+        return self.daily_et * (self.seasonal / 100.0)
+
+    async def _async_daily_forecast(self) -> list[dict] | None:
+        try:
+            response = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"type": "daily"},
+                target={"entity_id": self.rain_entity},
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("%s: previsioni giornaliere non ottenute (%s)", self.name, err)
+            return None
+        return (response or {}).get(self.rain_entity, {}).get("forecast") or None
+
+    async def _async_update_et0(self) -> None:
+        """Ricalcola l'evapotraspirazione di riferimento del giorno.
+
+        Se qualcosa manca si lascia il valore precedente, e se non c'e' mai
+        stato si ripiega sul consumo fisso: un dato meteo assente non deve
+        fermare l'irrigazione.
+        """
+        if self.et0_sensor:
+            stato = self.hass.states.get(self.et0_sensor)
+            if stato is not None and stato.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                try:
+                    self.et0_oggi = max(0.0, float(stato.state))
+                    return
+                except (TypeError, ValueError):
+                    pass
+
+        forecast = await self._async_daily_forecast()
+        if not forecast:
+            return
+
+        oggi = forecast[0]
+        try:
+            t_max = float(oggi["temperature"])
+            t_min = float(oggi["templow"])
+            umidita = float(oggi.get("humidity") or 70)
+            # met.no da' il vento in km/h a 10 metri.
+            vento_ms = float(oggi.get("wind_speed") or 0) / 3.6
+        except (KeyError, TypeError, ValueError):
+            return
+
+        adesso = dt_util.now()
+        self.et0_oggi = et0(
+            t_max=t_max,
+            t_min=t_min,
+            umidita_pct=umidita,
+            vento_ms=vento_ms,
+            latitudine=self.hass.config.latitude,
+            giorno_anno=adesso.timetuple().tm_yday,
+            quota_m=self.hass.config.elevation or 0,
+            k_rs=K_RS_COSTIERO if self.costa else K_RS_INTERNO,
+        )
+        _LOGGER.debug(
+            "%s: ET0 %.2f mm/g (Tmax %.1f Tmin %.1f UR %.0f%% vento %.1f m/s), "
+            "consumo del prato %.2f mm/g",
+            self.name, self.et0_oggi, t_max, t_min, umidita, vento_ms,
+            self.consumo_giornaliero,
+        )
+
     # -------------------------------------------------------------------------
     # Bilancio idrico
     # -------------------------------------------------------------------------
@@ -583,7 +687,7 @@ class IrrigationController:
         # il serbatoio in un colpo solo.
         ore = min(ore, 48.0)
 
-        consumo = self.daily_et * (self.seasonal / 100.0) * ore / 24.0
+        consumo = self.consumo_giornaliero * ore / 24.0
         self.reserve = max(0.0, self.reserve - consumo)
         self._reserve_updated = now
 
@@ -684,6 +788,9 @@ class IrrigationController:
         self.rain_recent = self.recent_rain_mm()
 
         if self.balance_enabled:
+            # L'ET0 si aggiorna qui: un solo timer per entrambe le cose, e il
+            # prelievo che segue usa subito il consumo del giorno.
+            await self._async_update_et0()
             self._deplete(dt_util.now())
             # Si accredita solo l'incremento: la stessa ora viene campionata
             # piu' volte, e sommarla ogni volta gonfierebbe la riserva.

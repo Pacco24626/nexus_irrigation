@@ -39,6 +39,10 @@ CONF_SOIL_CAPACITY = "soil_capacity"
 CONF_DAILY_ET = "daily_et"
 CONF_RESERVE_THRESHOLD = "reserve_threshold"
 CONF_PRECIP_RATE = "precip_rate"
+CONF_TIPO_PRATO = "grass_type"
+CONF_KC = "crop_coefficient"
+CONF_COSTA = "coastal"
+CONF_ET0_SENSOR = "et0_sensor"
 
 # --- Modalita' sorgente pioggia ----------------------------------------------
 RAIN_NONE = "none"
@@ -64,6 +68,7 @@ KEY_LAST_CYCLE = "last_cycle"
 KEY_NEXT_CYCLE = "next_cycle"
 KEY_RAIN = "rain"
 KEY_RESERVE = "reserve"
+KEY_ET0 = "et0"
 KEY_RUNNING = "running"
 KEY_MASTER = "master"
 
@@ -132,4 +137,27 @@ DEFAULT_RESERVE_THRESHOLD = 10.0
 # nella riserva l'acqua che diamo noi, altrimenti il modello crede che il
 # terreno sia sempre asciutto.
 DEFAULT_PRECIP_RATE = 10.0
+
+# --- Coefficiente colturale ---------------------------------------------------
+# Il Kc e' una proprieta' dell'erba, non del luogo: la latitudine suggerisce
+# quale specie sia probabile, ma dedurlo da li' sarebbe inventare precisione.
+# Chi ha piantato una macroterma al nord si ritroverebbe il consumo
+# sovrastimato di un terzo senza capire perche'. Si chiede quindi, e si
+# chiede nella forma che l'utente sa rispondere: che erba hai.
+PRATO_MICROTERME = "cool_season"
+PRATO_MACROTERME = "warm_season"
+PRATO_PERSONALIZZATO = "custom"
+TIPI_PRATO = [PRATO_MICROTERME, PRATO_MACROTERME, PRATO_PERSONALIZZATO]
+
+# Loietto, festuca, poa: i prati del centro e nord Europa.
+KC_MICROTERME = 0.85
+# Gramigna, zoysia, cynodon: i prati mediterranei e subtropicali.
+KC_MACROTERME = 0.75
+DEFAULT_KC = KC_MICROTERME
+
+# Il Kc e' anche la manopola di taratura: l'ET0 calcola cio' che e'
+# calcolabile, il Kc assorbe tutto il resto — suolo, esposizione, altezza
+# di taglio, quanto verde si vuole il prato.
+KC_MIN = 0.3
+KC_MAX = 1.5
 DEFAULT_START_HOUR = 6

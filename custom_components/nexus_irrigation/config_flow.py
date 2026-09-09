@@ -21,13 +21,17 @@ from .const import (
     CONF_MASTER_LEAD,
     CONF_RAIN_ENTITY,
     CONF_RAIN_HOURS,
+    CONF_COSTA,
     CONF_DAILY_ET,
+    CONF_ET0_SENSOR,
+    CONF_KC,
     CONF_PRECIP_RATE,
     CONF_RAIN_HOURS_PAST,
     CONF_RAIN_MODE,
     CONF_RAIN_THRESHOLD,
     CONF_RESERVE_THRESHOLD,
     CONF_SOIL_CAPACITY,
+    CONF_TIPO_PRATO,
     CONF_ZONE_ENTITY,
     CONF_ZONE_ID,
     CONF_ZONE_MINUTES,
@@ -39,11 +43,16 @@ from .const import (
     DEFAULT_MINUTES,
     DEFAULT_RAIN_HOURS,
     DEFAULT_DAILY_ET,
+    DEFAULT_KC,
     DEFAULT_PRECIP_RATE,
     DEFAULT_RAIN_HOURS_PAST,
     DEFAULT_RAIN_THRESHOLD,
     DEFAULT_RESERVE_THRESHOLD,
     DEFAULT_SOIL_CAPACITY,
+    KC_MAX,
+    KC_MIN,
+    PRATO_MICROTERME,
+    TIPI_PRATO,
     DOMAIN,
     RAIN_MODES,
     RAIN_NONE,
@@ -154,8 +163,40 @@ def _rain_details_schema(mode: str, defaults: dict[str, Any]) -> vol.Schema:
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
+        # Che erba c'e': l'unica domanda che nessun calcolo puo' rispondere.
+        # Latitudine e quota le sa gia' Home Assistant, quindi non si chiede
+        # niente di geografico e l'integrazione funziona ovunque.
+        fields[
+            vol.Required(
+                CONF_TIPO_PRATO, default=defaults.get(CONF_TIPO_PRATO, PRATO_MICROTERME)
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=TIPI_PRATO,
+                translation_key="grass_type",
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+        fields[
+            vol.Optional(
+                CONF_KC, default=defaults.get(CONF_KC, DEFAULT_KC)
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=KC_MIN, max=KC_MAX, step=0.05,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        fields[vol.Required(CONF_COSTA, default=defaults.get(CONF_COSTA, False))] = bool
+        fields[
+            vol.Optional(
+                CONF_ET0_SENSOR, description={"suggested_value": defaults.get(CONF_ET0_SENSOR)}
+            )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+
         # Bilancio idrico: capacita' a zero lo disattiva e si torna al
-        # confronto fra pioggia della finestra e soglia.
+        # confronto fra pioggia della finestra e soglia. Il consumo fisso
+        # resta come ripiego per quando i dati meteo non bastano al calcolo.
         for chiave, predefinito, unita, massimo, passo in (
             (CONF_SOIL_CAPACITY, DEFAULT_SOIL_CAPACITY, "mm", 100, 1),
             (CONF_RESERVE_THRESHOLD, DEFAULT_RESERVE_THRESHOLD, "mm", 100, 0.5),

@@ -52,7 +52,11 @@
           "soil_capacity": "Capacita' del terreno",
           "reserve_threshold": "Riserva sotto cui irrigare",
           "daily_et": "Consumo giornaliero del prato",
-          "precip_rate": "Portata degli irrigatori"
+          "precip_rate": "Portata degli irrigatori",
+          "grass_type": "Tipo di prato",
+          "crop_coefficient": "Coefficiente colturale (solo se personalizzato)",
+          "coastal": "Posizione costiera",
+          "et0_sensor": "Sensore di evapotraspirazione esterno"
         }
       }
     },
@@ -112,7 +116,11 @@
           "soil_capacity": "Capacita' del terreno",
           "reserve_threshold": "Riserva sotto cui irrigare",
           "daily_et": "Consumo giornaliero del prato",
-          "precip_rate": "Portata degli irrigatori"
+          "precip_rate": "Portata degli irrigatori",
+          "grass_type": "Tipo di prato",
+          "crop_coefficient": "Coefficiente colturale (solo se personalizzato)",
+          "coastal": "Posizione costiera",
+          "et0_sensor": "Sensore di evapotraspirazione esterno"
         }
       }
     }
@@ -124,6 +132,13 @@
         "sensor": "Sensore pioggia o pluviometro",
         "weather": "Previsioni meteo"
       }
+    },
+    "grass_type": {
+      "options": {
+        "cool_season": "Microterme — loietto, festuca, poa (Kc 0,85)",
+        "warm_season": "Macroterme — gramigna, zoysia (Kc 0,75)",
+        "custom": "Personalizzato — imposto il Kc a mano"
+      }
     }
   },
   "entity": {
@@ -134,6 +149,12 @@
           "running": "In irrigazione",
           "rain_skipped": "Saltato per pioggia"
         }
+      },
+      "reserve": {
+        "name": "Riserva idrica"
+      },
+      "et0": {
+        "name": "Evapotraspirazione"
       }
     }
   }

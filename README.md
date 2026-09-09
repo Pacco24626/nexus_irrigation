@@ -60,6 +60,7 @@ Per ogni impianto viene creato un dispositivo con:
 | `sensor.<impianto>_ultimo_ciclo` | Timestamp |
 | `sensor.<impianto>_prossimo_ciclo` | Timestamp del prossimo avvio |
 | `sensor.<impianto>_riserva_idrica` | Millimetri stimati nella zona radicale |
+| `sensor.<impianto>_evapotraspirazione` | ET₀ del giorno, calcolata con FAO 56 |
 | `binary_sensor.<impianto>_pioggia` | Esito dell'ultimo controllo pioggia |
 | `binary_sensor.<impianto>_in_irrigazione` | Acceso mentre una zona irriga |
 | `binary_sensor.<impianto>_master` | Solo con master configurato: stato della valvola generale |
@@ -85,7 +86,7 @@ si salta il ciclo se   riserva + pioggia prevista ≥ soglia
 |---|---|---|
 | Capacità del terreno | 25 mm | Acqua utile della zona radicale: un terreno medio ne trattiene 140-180 mm al metro, un prato radica sui 15-25 cm. Su sabbia si dimezza. |
 | Riserva sotto cui irrigare | 10 mm | Circa metà della capacità: oltre quel prelievo l'erba fatica a estrarre acqua. |
-| Consumo giornaliero | 4 mm/g | Evapotraspirazione di riferimento in piena estate alle nostre latitudini. Viene **scalato dal fattore stagionale**, lo stesso che scala le durate. |
+| Consumo giornaliero | *calcolato* | Evapotraspirazione FAO 56, vedi sotto. Il valore fisso di 4 mm/g resta solo come ripiego se mancano i dati meteo. |
 | Portata degli irrigatori | 10 mm/h | Serve a riaccreditare nella riserva l'acqua distribuita, altrimenti il modello crede che il terreno sia sempre asciutto. |
 
 Sono valori di partenza tratti dalla letteratura agronomica (FAO 56), non
@@ -103,6 +104,66 @@ la precipitazione dell'ora in corso, un valore per ciascuna ora. È una stima
 del servizio meteo, non la misura di un pluviometro, ed esiste solo da quando
 l'integrazione è in funzione. Con una sonda di umidità nel terreno si usa la
 modalità *sensore* e il modello non serve più.
+
+## Il consumo del prato lo calcola, non lo stima
+
+Con la sorgente *previsioni meteo* il consumo giornaliero non è un numero
+fisso: è **evapotraspirazione di riferimento secondo FAO 56**, l'equazione di
+Penman-Monteith, calcolata ogni giorno sui dati meteo reali.
+
+```
+        0,408 Δ (Rn − G) + γ · 900/(T+273) · u₂ (es − ea)
+ET₀ = ───────────────────────────────────────────────────
+                    Δ + γ (1 + 0,34 u₂)
+
+consumo del prato = ET₀ × Kc
+```
+
+**Non serve configurare niente di geografico.** Latitudine e quota le sa già
+Home Assistant, e dalla latitudine si calcola la radiazione extraterrestre —
+quanta energia solare arriva in cima all'atmosfera in quel giorno dell'anno.
+È astronomia, esatta, e funziona a qualunque latitudine, emisfero sud
+compreso: a Nove l'estate cade a luglio, in Brasile a dicembre, e il conto se
+ne accorge da solo.
+
+Temperatura massima e minima, umidità e vento vengono dalle previsioni
+giornaliere. L'unico ingrediente non misurato dai servizi meteo di consumo è
+la **radiazione solare**, e la FAO documenta come stimarla dall'escursione
+termica: una giornata limpida ha massime alte e minime basse, una coperta ha
+l'escursione schiacciata. La precisione attesa è entro il 10-20% di una
+stazione agrometeorologica — molto meglio di un valore fisso che non cambia
+mai, perché segue da sé la stagione e il tempo che fa.
+
+Nessuna chiave API, nessun servizio esterno: il calcolo gira offline.
+
+### L'unica domanda che resta
+
+Il **coefficiente colturale Kc** è una proprietà dell'erba, non del luogo, e
+non si può dedurre dalla posizione: chi ha piantato una macroterma al nord si
+ritroverebbe il consumo sovrastimato di un terzo senza capire perché. Si
+sceglie quindi il tipo di prato:
+
+| Tipo | Kc | Dove |
+|---|---|---|
+| Microterme | 0,85 | Loietto, festuca, poa — centro e nord Europa |
+| Macroterme | 0,75 | Gramigna, zoysia — clima mediterraneo e subtropicale |
+| Personalizzato | libero | Per chi sa cosa sta facendo |
+
+Il Kc è anche **la manopola di taratura**: l'ET₀ calcola ciò che è
+calcolabile, il Kc assorbe in un solo numero tutto ciò che è locale — suolo,
+esposizione, altezza di taglio, quanto verde si vuole il prato. Se il prato
+ingiallisce mentre la riserva è alta, alzalo; se resta lussureggiante mentre
+la riserva si svuota, abbassalo.
+
+C'è poi una spunta per la **posizione costiera**, che cambia il coefficiente
+della stima di radiazione: sul mare la brezza smorza l'escursione termica.
+
+Chi ha una stazione meteo vera o un feed regionale può indicare un **sensore
+ET₀ esterno**, che ha la precedenza sul calcolo interno.
+
+Quando l'ET₀ è disponibile il **fattore stagionale non scala più il consumo**:
+la stagione la conta già il calcolo, che a dicembre dà mezzo millimetro e a
+luglio cinque. Continua a scalare le durate di irrigazione, come prima.
 
 ## Valvola master e pompa
 

@@ -52,7 +52,11 @@
           "soil_capacity": "Soil capacity",
           "reserve_threshold": "Reserve below which to water",
           "daily_et": "Daily lawn water use",
-          "precip_rate": "Sprinkler output"
+          "precip_rate": "Sprinkler output",
+          "grass_type": "Grass type",
+          "crop_coefficient": "Crop coefficient (custom only)",
+          "coastal": "Coastal location",
+          "et0_sensor": "External evapotranspiration sensor"
         }
       }
     },
@@ -112,7 +116,11 @@
           "soil_capacity": "Soil capacity",
           "reserve_threshold": "Reserve below which to water",
           "daily_et": "Daily lawn water use",
-          "precip_rate": "Sprinkler output"
+          "precip_rate": "Sprinkler output",
+          "grass_type": "Grass type",
+          "crop_coefficient": "Crop coefficient (custom only)",
+          "coastal": "Coastal location",
+          "et0_sensor": "External evapotranspiration sensor"
         }
       }
     }
@@ -124,6 +132,13 @@
         "sensor": "Rain sensor or gauge",
         "weather": "Weather forecast"
       }
+    },
+    "grass_type": {
+      "options": {
+        "cool_season": "Cool season — ryegrass, fescue, bluegrass (Kc 0.85)",
+        "warm_season": "Warm season — bermuda, zoysia (Kc 0.75)",
+        "custom": "Custom — I set the Kc myself"
+      }
     }
   },
   "entity": {
@@ -134,6 +149,12 @@
           "running": "Watering",
           "rain_skipped": "Skipped for rain"
         }
+      },
+      "reserve": {
+        "name": "Water reserve"
+      },
+      "et0": {
+        "name": "Evapotranspiration"
       }
     }
   }

@@ -28,6 +28,7 @@ from .const import (
     KEY_DAY_PREFIX,
     KEY_ENABLE,
     KEY_LAST_CYCLE,
+    KEY_ET0,
     KEY_RESERVE,
     KEY_MASTER,
     KEY_NEXT_CYCLE,
@@ -55,6 +56,7 @@ async def async_setup_entry(
             LastCycleSensor(controller),
             NextCycleSensor(controller),
             ReserveSensor(controller),
+            Et0Sensor(controller),
         ]
     )
 
@@ -156,6 +158,46 @@ class LastCycleSensor(IrrigationEntity, SensorEntity, RestoreEntity):
     def native_value(self) -> datetime | None:
         return self.controller.last_cycle
 
+
+class Et0Sensor(IrrigationEntity, SensorEntity):
+    """Evapotraspirazione di riferimento del giorno, in millimetri.
+
+    E' una grandezza che vale oltre l'irrigazione: dice quanto sta tirando la
+    stagione. Calcolata con Penman-Monteith dai dati meteo, dalla latitudine e
+    dalla quota che Home Assistant gia' conosce.
+    """
+
+    _attr_name = "Evapotraspirazione"
+    _attr_icon = "mdi:sun-thermometer"
+    _attr_native_unit_of_measurement = "mm"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, controller: IrrigationController) -> None:
+        super().__init__(controller, KEY_ET0)
+
+    @property
+    def available(self) -> bool:
+        return self.controller.et0_oggi is not None
+
+    @property
+    def native_value(self) -> float | None:
+        if self.controller.et0_oggi is None:
+            return None
+        return round(self.controller.et0_oggi, 2)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        c = self.controller
+        return {
+            "metodo": "sensore esterno" if c.et0_sensor else "FAO 56 Penman-Monteith",
+            "tipo_prato": c.tipo_prato,
+            "kc": c.kc,
+            "consumo_prato_mm": round(c.consumo_giornaliero, 2),
+            "posizione_costiera": c.costa,
+            "latitudine": round(c.hass.config.latitude, 4),
+            "quota_m": c.hass.config.elevation,
+        }
 
 class ReserveSensor(IrrigationEntity, SensorEntity, RestoreEntity):
     """L'acqua stimata nella zona radicale, in millimetri.
