@@ -35,6 +35,10 @@ CONF_RAIN_ENTITY = "rain_entity"
 CONF_RAIN_THRESHOLD = "rain_threshold"
 CONF_RAIN_HOURS = "rain_hours"
 CONF_RAIN_HOURS_PAST = "rain_hours_past"
+CONF_SOIL_CAPACITY = "soil_capacity"
+CONF_DAILY_ET = "daily_et"
+CONF_RESERVE_THRESHOLD = "reserve_threshold"
+CONF_PRECIP_RATE = "precip_rate"
 
 # --- Modalita' sorgente pioggia ----------------------------------------------
 RAIN_NONE = "none"
@@ -59,6 +63,7 @@ KEY_STATUS = "status"
 KEY_LAST_CYCLE = "last_cycle"
 KEY_NEXT_CYCLE = "next_cycle"
 KEY_RAIN = "rain"
+KEY_RESERVE = "reserve"
 KEY_RUNNING = "running"
 KEY_MASTER = "master"
 
@@ -102,4 +107,29 @@ DEFAULT_RAIN_HOURS_PAST = 12
 
 # Ogni quanto si campiona la precipitazione dell'ora in corso.
 RAIN_SAMPLE_MINUTES = 15
+
+# --- Bilancio idrico del terreno ----------------------------------------------
+# I due valori vengono dalla letteratura agronomica (FAO 56), non da una
+# media inventata, ma restano un punto di partenza da correggere guardando
+# il prato: dipendono da tessitura del suolo, profondita' radicale, specie
+# del tappeto erboso ed esposizione.
+#
+# Capacita': l'acqua utile trattenuta dalla zona radicale. Un terreno medio
+# ne trattiene 140-180 mm per metro di profondita', e un prato radica sui
+# 15-25 cm. Su sabbia scende alla meta'.
+DEFAULT_SOIL_CAPACITY = 25.0
+
+# Evapotraspirazione giornaliera di riferimento in piena estate alle nostre
+# latitudini. D'inverno vale un quarto: la scala il fattore stagionale, lo
+# stesso che scala la durata dell'irrigazione.
+DEFAULT_DAILY_ET = 4.0
+
+# Sotto questa riserva il prato comincia a soffrire e si irriga. E' circa
+# meta' della capacita': oltre quel prelievo l'erba fatica a estrarre acqua.
+DEFAULT_RESERVE_THRESHOLD = 10.0
+
+# Quanti millimetri l'ora distribuiscono gli irrigatori: serve a riaccreditare
+# nella riserva l'acqua che diamo noi, altrimenti il modello crede che il
+# terreno sia sempre asciutto.
+DEFAULT_PRECIP_RATE = 10.0
 DEFAULT_START_HOUR = 6

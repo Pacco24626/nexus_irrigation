@@ -11,7 +11,7 @@ dall'interfaccia. Nessuno YAML da scrivere.
 - **Sequenza garantita**: le zone irrigano una alla volta, mai in parallelo, per non dimezzare la pressione.
 - **Valvola master o pompa** facoltativa, con sequenza di apertura e chiusura corretta.
 - **Fattore stagionale**: un solo cursore scala tutte le durate. 60% a maggio, 130% a luglio.
-- **Salta se piove**: sensore pioggia, pluviometro o previsioni meteo, con soglia in millimetri.
+- **Salta se il terreno è già bagnato**: bilancio idrico che tiene conto della pioggia caduta, di quella prevista e dell'acqua che il prato consuma ogni giorno.
 - **Giorni della settimana** selezionabili singolarmente.
 - **Chiusura garantita**: la valvola si chiude anche se il ciclo viene interrotto, e un
   watchdog chiude qualunque valvola resti aperta senza un ciclo attivo.
@@ -38,7 +38,7 @@ Il config flow chiede, nell'ordine:
 4. **Sorgente pioggia** — una fra:
    - *Nessuna*: irriga sempre.
    - *Sensore*: un `binary_sensor` (attivo = piove) o un `sensor` numerico confrontato con la soglia in mm.
-   - *Previsioni meteo*: somma i millimetri previsti nelle prossime N ore da un'entità `weather.*`.
+   - *Previsioni meteo*: bilancio idrico del terreno, descritto qui sotto.
 
 Tutto è rimodificabile da **Configura** sulla card dell'integrazione.
 
@@ -59,9 +59,50 @@ Per ogni impianto viene creato un dispositivo con:
 | `sensor.<impianto>_stato` | `idle` / `running` / `rain_skipped` |
 | `sensor.<impianto>_ultimo_ciclo` | Timestamp |
 | `sensor.<impianto>_prossimo_ciclo` | Timestamp del prossimo avvio |
+| `sensor.<impianto>_riserva_idrica` | Millimetri stimati nella zona radicale |
 | `binary_sensor.<impianto>_pioggia` | Esito dell'ultimo controllo pioggia |
 | `binary_sensor.<impianto>_in_irrigazione` | Acceso mentre una zona irriga |
 | `binary_sensor.<impianto>_master` | Solo con master configurato: stato della valvola generale |
+
+## Il bilancio idrico
+
+Contare la pioggia su una finestra fissa non basta, per quanto la si allunghi:
+**ogni finestra ha un bordo**. Una settimana di pioggia seguita da due giornate
+di sole è il caso in cui fallisce peggio — il terreno è al massimo della sua
+capacità proprio quando il conteggio è appena scaduto, e l'impianto irriga un
+prato zuppo.
+
+Con la sorgente *previsioni meteo* l'integrazione non conta quindi la pioggia,
+ma **l'acqua che c'è nel terreno**:
+
+```
+riserva = limita(riserva + pioggia + irrigazione − consumo, 0, capacità)
+
+si salta il ciclo se   riserva + pioggia prevista ≥ soglia
+```
+
+| Parametro | Predefinito | Da dove viene |
+|---|---|---|
+| Capacità del terreno | 25 mm | Acqua utile della zona radicale: un terreno medio ne trattiene 140-180 mm al metro, un prato radica sui 15-25 cm. Su sabbia si dimezza. |
+| Riserva sotto cui irrigare | 10 mm | Circa metà della capacità: oltre quel prelievo l'erba fatica a estrarre acqua. |
+| Consumo giornaliero | 4 mm/g | Evapotraspirazione di riferimento in piena estate alle nostre latitudini. Viene **scalato dal fattore stagionale**, lo stesso che scala le durate. |
+| Portata degli irrigatori | 10 mm/h | Serve a riaccreditare nella riserva l'acqua distribuita, altrimenti il modello crede che il terreno sia sempre asciutto. |
+
+Sono valori di partenza tratti dalla letteratura agronomica (FAO 56), non
+costanti di natura: dipendono da tessitura del suolo, profondità radicale,
+specie del tappeto erboso ed esposizione. Il sensore **riserva idrica** mette
+il ragionamento in vista, così guardando quel numero e guardando il prato si
+capisce in due settimane se la taratura regge.
+
+Mettendo la capacità a **zero** il bilancio si disattiva e si torna al semplice
+confronto fra i millimetri della finestra e la soglia.
+
+Una precisazione: il servizio delle previsioni restituisce solo il futuro. La
+pioggia già caduta la costruisce l'integrazione campionando ogni quarto d'ora
+la precipitazione dell'ora in corso, un valore per ciascuna ora. È una stima
+del servizio meteo, non la misura di un pluviometro, ed esiste solo da quando
+l'integrazione è in funzione. Con una sonda di umidità nel terreno si usa la
+modalità *sensore* e il modello non serve più.
 
 ## Valvola master e pompa
 

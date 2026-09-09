@@ -21,9 +21,13 @@ from .const import (
     CONF_MASTER_LEAD,
     CONF_RAIN_ENTITY,
     CONF_RAIN_HOURS,
+    CONF_DAILY_ET,
+    CONF_PRECIP_RATE,
     CONF_RAIN_HOURS_PAST,
     CONF_RAIN_MODE,
     CONF_RAIN_THRESHOLD,
+    CONF_RESERVE_THRESHOLD,
+    CONF_SOIL_CAPACITY,
     CONF_ZONE_ENTITY,
     CONF_ZONE_ID,
     CONF_ZONE_MINUTES,
@@ -34,8 +38,12 @@ from .const import (
     DEFAULT_MASTER_LEAD,
     DEFAULT_MINUTES,
     DEFAULT_RAIN_HOURS,
+    DEFAULT_DAILY_ET,
+    DEFAULT_PRECIP_RATE,
     DEFAULT_RAIN_HOURS_PAST,
     DEFAULT_RAIN_THRESHOLD,
+    DEFAULT_RESERVE_THRESHOLD,
+    DEFAULT_SOIL_CAPACITY,
     DOMAIN,
     RAIN_MODES,
     RAIN_NONE,
@@ -146,6 +154,22 @@ def _rain_details_schema(mode: str, defaults: dict[str, Any]) -> vol.Schema:
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
+        # Bilancio idrico: capacita' a zero lo disattiva e si torna al
+        # confronto fra pioggia della finestra e soglia.
+        for chiave, predefinito, unita, massimo, passo in (
+            (CONF_SOIL_CAPACITY, DEFAULT_SOIL_CAPACITY, "mm", 100, 1),
+            (CONF_RESERVE_THRESHOLD, DEFAULT_RESERVE_THRESHOLD, "mm", 100, 0.5),
+            (CONF_DAILY_ET, DEFAULT_DAILY_ET, "mm/g", 15, 0.5),
+            (CONF_PRECIP_RATE, DEFAULT_PRECIP_RATE, "mm/h", 60, 0.5),
+        ):
+            fields[
+                vol.Required(chiave, default=defaults.get(chiave, predefinito))
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=massimo, step=passo, unit_of_measurement=unita,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            )
     return vol.Schema(fields)
 
 

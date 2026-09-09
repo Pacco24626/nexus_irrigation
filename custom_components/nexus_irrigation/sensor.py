@@ -10,7 +10,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -24,6 +28,7 @@ from .const import (
     KEY_DAY_PREFIX,
     KEY_ENABLE,
     KEY_LAST_CYCLE,
+    KEY_RESERVE,
     KEY_MASTER,
     KEY_NEXT_CYCLE,
     KEY_RAIN,
@@ -45,7 +50,12 @@ async def async_setup_entry(
 ) -> None:
     controller: IrrigationController = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
-        [StatusSensor(controller), LastCycleSensor(controller), NextCycleSensor(controller)]
+        [
+            StatusSensor(controller),
+            LastCycleSensor(controller),
+            NextCycleSensor(controller),
+            ReserveSensor(controller),
+        ]
     )
 
 
@@ -146,6 +156,60 @@ class LastCycleSensor(IrrigationEntity, SensorEntity, RestoreEntity):
     def native_value(self) -> datetime | None:
         return self.controller.last_cycle
 
+
+class ReserveSensor(IrrigationEntity, SensorEntity, RestoreEntity):
+    """L'acqua stimata nella zona radicale, in millimetri.
+
+    E' il ragionamento del bilancio idrico messo in vista: guardando questo
+    numero e guardando il prato si capisce in due settimane se la capacita' e
+    il consumo giornaliero sono tarati bene. Senza, il modello deciderebbe di
+    nascosto.
+    """
+
+    _attr_name = "Riserva idrica"
+    _attr_icon = "mdi:water-percent"
+    _attr_native_unit_of_measurement = "mm"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, controller: IrrigationController) -> None:
+        super().__init__(controller, KEY_RESERVE)
+
+    async def async_added_to_hass(self) -> None:
+        """Ripristina la riserva: e' uno stato del terreno, non del programma.
+
+        Azzerarla a ogni riavvio farebbe credere al modello che il prato sia
+        asciutto proprio dopo un temporale.
+        """
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last and last.state not in (None, "unknown", "unavailable"):
+            try:
+                self.controller.reserve = min(
+                    self.controller.soil_capacity, max(0.0, float(last.state))
+                )
+            except (TypeError, ValueError):
+                pass
+
+    @property
+    def available(self) -> bool:
+        return self.controller.balance_enabled
+
+    @property
+    def native_value(self) -> float:
+        return round(self.controller.reserve, 1)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        c = self.controller
+        return {
+            "capacity_mm": c.soil_capacity,
+            "threshold_mm": c.reserve_threshold,
+            "daily_et_mm": c.daily_et,
+            "daily_et_applied_mm": round(c.daily_et * c.seasonal / 100.0, 1),
+            "precip_rate_mm_h": c.precip_rate,
+            "fill_pct": round(100 * c.reserve / c.soil_capacity) if c.soil_capacity else 0,
+        }
 
 class NextCycleSensor(IrrigationEntity, SensorEntity):
     """Prossimo avvio automatico, o niente se l'impianto e' disabilitato."""

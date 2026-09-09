@@ -48,7 +48,11 @@
           "rain_entity": "Entity",
           "rain_threshold": "Threshold",
           "rain_hours": "Forecast hours to add up",
-          "rain_hours_past": "Past hours to add up"
+          "rain_hours_past": "Past hours to add up",
+          "soil_capacity": "Soil capacity",
+          "reserve_threshold": "Reserve below which to water",
+          "daily_et": "Daily lawn water use",
+          "precip_rate": "Sprinkler output"
         }
       }
     },
@@ -104,7 +108,11 @@
           "rain_entity": "Entity",
           "rain_threshold": "Threshold",
           "rain_hours": "Forecast hours to add up",
-          "rain_hours_past": "Past hours to add up"
+          "rain_hours_past": "Past hours to add up",
+          "soil_capacity": "Soil capacity",
+          "reserve_threshold": "Reserve below which to water",
+          "daily_et": "Daily lawn water use",
+          "precip_rate": "Sprinkler output"
         }
       }
     }

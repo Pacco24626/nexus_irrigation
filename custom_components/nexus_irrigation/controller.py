@@ -32,9 +32,13 @@ from .const import (
     CONF_MASTER_LEAD,
     CONF_RAIN_ENTITY,
     CONF_RAIN_HOURS,
+    CONF_DAILY_ET,
+    CONF_PRECIP_RATE,
     CONF_RAIN_HOURS_PAST,
     CONF_RAIN_MODE,
     CONF_RAIN_THRESHOLD,
+    CONF_RESERVE_THRESHOLD,
+    CONF_SOIL_CAPACITY,
     CONF_ZONE_ENTITY,
     CONF_ZONE_ID,
     CONF_ZONE_MINUTES,
@@ -43,8 +47,12 @@ from .const import (
     DEFAULT_MASTER_LAG,
     DEFAULT_MASTER_LEAD,
     DEFAULT_RAIN_HOURS,
+    DEFAULT_DAILY_ET,
+    DEFAULT_PRECIP_RATE,
     DEFAULT_RAIN_HOURS_PAST,
     DEFAULT_RAIN_THRESHOLD,
+    DEFAULT_RESERVE_THRESHOLD,
+    DEFAULT_SOIL_CAPACITY,
     DEFAULT_SEASONAL,
     DEFAULT_START_HOUR,
     DOMAIN,
@@ -136,6 +144,21 @@ class IrrigationController:
         # il passato se lo costruisce l'integrazione campionando l'ora in
         # corso. E' una stima di met.no, non la misura di un pluviometro.
         self.rain_log: dict[str, float] = {}
+
+        self.soil_capacity: float = float(
+            cfg.get(CONF_SOIL_CAPACITY, DEFAULT_SOIL_CAPACITY)
+        )
+        self.daily_et: float = float(cfg.get(CONF_DAILY_ET, DEFAULT_DAILY_ET))
+        self.reserve_threshold: float = float(
+            cfg.get(CONF_RESERVE_THRESHOLD, DEFAULT_RESERVE_THRESHOLD)
+        )
+        self.precip_rate: float = float(
+            cfg.get(CONF_PRECIP_RATE, DEFAULT_PRECIP_RATE)
+        )
+        # Si parte a meta' serbatoio: ne' assetato ne' zuppo, cosi' i primi
+        # giorni il modello non prende una decisione forte su niente.
+        self.reserve: float = self.soil_capacity / 2
+        self._reserve_updated: datetime | None = None
         self._unsub_rain: CALLBACK_TYPE | None = None
         self.master_open: bool = False
 
@@ -379,6 +402,12 @@ class IrrigationController:
             self.zone_ends_at = None
             self.notify()
 
+    def _credit_irrigation(self, seconds: int) -> None:
+        """Riaccredita nella riserva l'acqua appena distribuita."""
+        if self.balance_enabled:
+            self._deplete(dt_util.now())
+            self.add_water(self._irrigation_mm(seconds))
+
     async def _async_run_zone(self, zone: Zone, seconds: int) -> None:
         """Apre, attende, chiude.
 
@@ -394,12 +423,19 @@ class IrrigationController:
             seconds=seconds + (self.master_lead if self.master_entity else 0)
         )
         self.notify()
+        acqua_da = None
         try:
             await self._async_begin_zone(zone)
             self.zone_ends_at = dt_util.now() + timedelta(seconds=seconds)
+            acqua_da = dt_util.now()
             self.notify()
             await asyncio.sleep(seconds)
         finally:
+            # Si accredita l'acqua effettivamente distribuita, non quella
+            # programmata: un ciclo interrotto a meta' ha bagnato a meta'.
+            if acqua_da is not None:
+                erogati = (dt_util.now() - acqua_da).total_seconds()
+                self._credit_irrigation(int(min(seconds, max(0, erogati))))
             # Non si attende qui: durante un cancel l'await verrebbe
             # interrotto a sua volta e le valvole resterebbero aperte.
             self.hass.async_create_task(self._async_end_zone(zone))
@@ -520,6 +556,52 @@ class IrrigationController:
             notification_id=f"{DOMAIN}_{self.entry.entry_id}_wd_{key}",
         )
 
+
+    # -------------------------------------------------------------------------
+    # Bilancio idrico
+    # -------------------------------------------------------------------------
+    @property
+    def balance_enabled(self) -> bool:
+        """Il bilancio vale solo con la sorgente meteo e una capacita' dichiarata."""
+        return self.rain_mode == RAIN_WEATHER and self.soil_capacity > 0
+
+    def _deplete(self, now: datetime) -> None:
+        """Toglie dalla riserva l'acqua evaporata dall'ultimo aggiornamento.
+
+        Il consumo giornaliero viene scalato dal fattore stagionale: e' la
+        stessa manopola che scala la durata dell'irrigazione, e regola le due
+        cose in modo coerente senza chiedere all'utente un secondo concetto.
+        """
+        if self._reserve_updated is None:
+            self._reserve_updated = now
+            return
+
+        ore = (now - self._reserve_updated).total_seconds() / 3600.0
+        if ore <= 0:
+            return
+        # Un salto enorme (riavvio lungo, orologio spostato) non deve svuotare
+        # il serbatoio in un colpo solo.
+        ore = min(ore, 48.0)
+
+        consumo = self.daily_et * (self.seasonal / 100.0) * ore / 24.0
+        self.reserve = max(0.0, self.reserve - consumo)
+        self._reserve_updated = now
+
+    def add_water(self, mm: float) -> None:
+        """Aggiunge acqua alla riserva, senza superare la capacita'.
+
+        Il tetto e' la parte che risolve il caso della settimana di pioggia:
+        oltre la capacita' l'acqua drena e non va contata, ma quello che sta
+        dentro resta li' per giorni.
+        """
+        if mm <= 0:
+            return
+        self.reserve = min(self.soil_capacity, self.reserve + mm)
+        self.notify()
+
+    def _irrigation_mm(self, seconds: int) -> float:
+        return self.precip_rate * seconds / 3600.0
+
     # -------------------------------------------------------------------------
     # Pioggia
     # -------------------------------------------------------------------------
@@ -596,9 +678,17 @@ class IrrigationController:
         except (IndexError, TypeError, ValueError):
             return
 
+        precedente = self.rain_log.get(ora, 0.0)
         self.rain_log[ora] = mm
         self._prune_rain_log()
         self.rain_recent = self.recent_rain_mm()
+
+        if self.balance_enabled:
+            self._deplete(dt_util.now())
+            # Si accredita solo l'incremento: la stessa ora viene campionata
+            # piu' volte, e sommarla ogni volta gonfierebbe la riserva.
+            self.add_water(max(0.0, mm - precedente))
+
         self.notify()
 
     def _prune_rain_log(self) -> None:
@@ -640,8 +730,20 @@ class IrrigationController:
         caduta = self.recent_rain_mm()
         self.rain_forecast = round(prevista, 1)
         self.rain_recent = caduta
-        totale = caduta + prevista
 
+        if self.balance_enabled:
+            self._deplete(dt_util.now())
+            disponibile = self.reserve + prevista
+            _LOGGER.debug(
+                "%s: riserva %.1f mm piu' %.1f mm previsti, soglia %.1f",
+                self.name,
+                self.reserve,
+                prevista,
+                self.reserve_threshold,
+            )
+            return disponibile >= self.reserve_threshold
+
+        totale = caduta + prevista
         _LOGGER.debug(
             "%s: %.1f mm caduti nelle ultime %d ore piu' %.1f mm previsti nelle "
             "prossime %d, soglia %.1f",

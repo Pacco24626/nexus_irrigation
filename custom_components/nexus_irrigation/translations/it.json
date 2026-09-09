@@ -48,7 +48,11 @@
           "rain_entity": "Entita'",
           "rain_threshold": "Soglia",
           "rain_hours": "Ore di previsione da sommare",
-          "rain_hours_past": "Ore passate da sommare"
+          "rain_hours_past": "Ore passate da sommare",
+          "soil_capacity": "Capacita' del terreno",
+          "reserve_threshold": "Riserva sotto cui irrigare",
+          "daily_et": "Consumo giornaliero del prato",
+          "precip_rate": "Portata degli irrigatori"
         }
       }
     },
@@ -104,7 +108,11 @@
           "rain_entity": "Entita'",
           "rain_threshold": "Soglia",
           "rain_hours": "Ore di previsione da sommare",
-          "rain_hours_past": "Ore passate da sommare"
+          "rain_hours_past": "Ore passate da sommare",
+          "soil_capacity": "Capacita' del terreno",
+          "reserve_threshold": "Riserva sotto cui irrigare",
+          "daily_et": "Consumo giornaliero del prato",
+          "precip_rate": "Portata degli irrigatori"
         }
       }
     }
