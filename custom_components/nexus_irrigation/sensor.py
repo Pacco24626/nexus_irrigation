@@ -126,6 +126,11 @@ class StatusSensor(IrrigationEntity, SensorEntity):
             "rain_source": controller.rain_entity,
             "next_cycle": controller.next_cycle.isoformat() if controller.next_cycle else None,
             "last_cycle": controller.last_cycle.isoformat() if controller.last_cycle else None,
+            "day_mode": controller.day_mode,
+            "cycle_days": controller.cycle_days,
+            "cycle_count": controller.cycle_count,
+            "rain_bypass": controller.rain_bypass,
+            "zone_non_aperte": controller.zone_non_aperte,
         }
 
 

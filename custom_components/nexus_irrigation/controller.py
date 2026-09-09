@@ -10,7 +10,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
@@ -62,7 +62,15 @@ from .const import (
     KC_MACROTERME,
     KC_MICROTERME,
     PRATO_MACROTERME,
+    ATTESA_APERTURA,
+    DEFAULT_CICLO_GIORNI,
+    DEFAULT_MODO_GIORNI,
+    MODO_CICLICO,
+    MODO_DISPARI,
+    MODO_PARI,
+    MODO_SETTIMANALE,
     PRATO_MICROTERME,
+    TENTATIVI_APERTURA,
     DEFAULT_SEASONAL,
     DEFAULT_START_HOUR,
     DOMAIN,
@@ -94,6 +102,10 @@ class Zone:
     minutes: float
     # Durata base corrente, modificabile a caldo dal number associato.
     duration: float = field(default=0.0)
+    # Ogni quanti cicli tocca a questa zona: 1 sempre, 3 una volta su tre.
+    # E' la versione economica dei programmi separati per zona: il prato a
+    # ogni giro, la siepe una volta su tre.
+    divider: int = field(default=1)
 
     def __post_init__(self) -> None:
         if not self.duration:
@@ -170,6 +182,12 @@ class IrrigationController:
         self.costa: bool = bool(cfg.get(CONF_COSTA, False))
         self.et0_sensor: str | None = cfg.get(CONF_ET0_SENSOR)
         self.et0_oggi: float | None = None
+
+        self.rain_bypass: bool = False
+        self.day_mode: str = DEFAULT_MODO_GIORNI
+        self.cycle_days: int = DEFAULT_CICLO_GIORNI
+        self.cycle_count: int = 0
+        self.zone_non_aperte: list[str] = []
         # Si parte a meta' serbatoio: ne' assetato ne' zuppo, cosi' i primi
         # giorni il modello non prende una decisione forte su niente.
         self.reserve: float = self.soil_capacity / 2
@@ -264,6 +282,29 @@ class IrrigationController:
     # Parametri pilotati dalle entita'
     # -------------------------------------------------------------------------
     @callback
+    def set_rain_bypass(self, value: bool) -> None:
+        self.rain_bypass = value
+        self.notify()
+
+    @callback
+    def set_day_mode(self, value: str) -> None:
+        self.day_mode = value
+        self.reschedule()
+
+    @callback
+    def set_cycle_days(self, value: int) -> None:
+        self.cycle_days = max(1, int(value))
+        self.reschedule()
+
+    @callback
+    def set_zone_divider(self, zone_id: str, value: int) -> None:
+        for zone in self.zones:
+            if zone.id == zone_id:
+                zone.divider = max(1, int(value))
+                break
+        self.notify()
+
+    @callback
     def set_enabled(self, value: bool) -> None:
         self.enabled = value
         self.reschedule()
@@ -311,9 +352,22 @@ class IrrigationController:
             )
         self.notify()
 
+    def giorno_valido(self, giorno: date) -> bool:
+        """Se in quel giorno di calendario e' consentito irrigare."""
+        if self.day_mode == MODO_DISPARI:
+            return giorno.day % 2 == 1
+        if self.day_mode == MODO_PARI:
+            return giorno.day % 2 == 0
+        if self.day_mode == MODO_CICLICO:
+            passo = max(1, self.cycle_days)
+            return giorno.toordinal() % passo == 0
+        return self.days[giorno.weekday()]
+
     def _compute_next(self) -> datetime | None:
         """Prossima occorrenza valida, o None se non ne esistono."""
-        if not self.enabled or not any(self.days):
+        if not self.enabled:
+            return None
+        if self.day_mode == MODO_SETTIMANALE and not any(self.days):
             return None
 
         now = dt_util.now()
@@ -323,11 +377,20 @@ class IrrigationController:
             second=0,
             microsecond=0,
         )
-        for offset in range(8):
+        # Con i giorni ciclici l'intervallo puo' arrivare a un mese, quindi non
+        # bastano piu' otto giorni di ricerca.
+        for offset in range(40):
             candidate = base + timedelta(days=offset)
-            if candidate > now and self.days[candidate.weekday()]:
+            if candidate > now and self.giorno_valido(candidate.date()):
                 return candidate
         return None
+
+    def zona_tocca(self, zone: Zone) -> bool:
+        """Se questa zona rientra nel giro corrente."""
+        passo = max(1, int(zone.divider))
+        if passo <= 1:
+            return True
+        return self.cycle_count % passo == 0
 
     async def _async_scheduled_start(self, _now: datetime) -> None:
         self._unsub_schedule = None
@@ -398,12 +461,14 @@ class IrrigationController:
                 )
                 return
 
-            for index, zone in enumerate(self.zones):
+            self.zone_non_aperte = []
+            da_irrigare = [z for z in self.zones if self.zona_tocca(z)]
+            for index, zone in enumerate(da_irrigare):
                 seconds = self.zone_seconds(zone)
                 if seconds <= 0:
                     continue
                 await self._async_run_zone(zone, seconds)
-                if index < len(self.zones) - 1:
+                if index < len(da_irrigare) - 1:
                     # La pausa deve coprire anche il lag del master, altrimenti
                     # il settore successivo aprirebbe mentre il precedente si
                     # sta ancora chiudendo, con due zone in pressione insieme.
@@ -414,6 +479,7 @@ class IrrigationController:
                     )
 
             self.last_cycle = dt_util.now()
+            self.cycle_count += 1
             self.status = STATUS_IDLE
         finally:
             self.active_zone = None
@@ -457,7 +523,8 @@ class IrrigationController:
         self.notify()
         acqua_da = None
         try:
-            await self._async_begin_zone(zone)
+            if not await self._async_begin_zone(zone):
+                return
             self.zone_ends_at = dt_util.now() + timedelta(seconds=seconds)
             acqua_da = dt_util.now()
             self.notify()
@@ -475,19 +542,62 @@ class IrrigationController:
             self.zone_ends_at = None
             self.notify()
 
-    async def _async_begin_zone(self, zone: Zone) -> None:
+    async def _async_begin_zone(self, zone: Zone) -> bool:
         """Apertura ordinata: prima il settore, poi il master.
 
         L'ordine non e' arbitrario. Avviare una pompa contro valvole ancora
         chiuse la manda in pressione a vuoto: colpo d'ariete alla partenza e,
         sulle autoclavi, intervento del pressostato.
         """
-        await self._async_set_valve(zone.entity_id, True)
+        if not await self._async_apri_verificato(zone):
+            return False
         if not self.master_entity:
-            return
+            return True
         if self.master_lead:
             await asyncio.sleep(self.master_lead)
         await self._async_set_master(True)
+        return True
+
+    async def _async_apri_verificato(self, zone: Zone) -> bool:
+        """Comanda l'apertura e controlla che la valvola risponda.
+
+        Le centraline da giardino rilevano il guasto elettrico misurando la
+        corrente sul solenoide. Noi la corrente non la vediamo, ma possiamo
+        vedere l'equivalente: una valvola comandata che non si dichiara aperta.
+        Senza questo controllo la zona irriga per zero minuti senza dire nulla.
+        """
+        for tentativo in range(1, TENTATIVI_APERTURA + 1):
+            await self._async_set_valve(zone.entity_id, True)
+            if await self._async_attendi_apertura(zone.entity_id):
+                if tentativo > 1:
+                    _LOGGER.info(
+                        "%s: la zona %s si e' aperta al tentativo %s",
+                        self.name, zone.name, tentativo,
+                    )
+                return True
+
+        _LOGGER.warning(
+            "%s: la zona %s non conferma l'apertura dopo %s tentativi, saltata",
+            self.name, zone.name, TENTATIVI_APERTURA,
+        )
+        if zone.name not in self.zone_non_aperte:
+            self.zone_non_aperte.append(zone.name)
+        persistent_notification.async_create(
+            self.hass,
+            f"La zona {zone.name} di {self.name} non ha confermato l'apertura "
+            f"ed e' stata saltata. Controllare la valvola o il suo collegamento.",
+            title="Zona non aperta",
+            notification_id=f"{DOMAIN}_{self.entry.entry_id}_zona_{zone.id}",
+        )
+        return False
+
+    async def _async_attendi_apertura(self, entity_id: str) -> bool:
+        scadenza = self.hass.loop.time() + ATTESA_APERTURA
+        while self.hass.loop.time() < scadenza:
+            if self.valve_is_open(entity_id):
+                return True
+            await asyncio.sleep(0.5)
+        return False
 
     async def _async_end_zone(self, zone: Zone) -> None:
         """Chiusura ordinata: prima il master, poi il settore.
@@ -728,6 +838,11 @@ class IrrigationController:
     # -------------------------------------------------------------------------
     async def _async_rain_blocks(self) -> bool:
         """True se il ciclo va saltato per pioggia."""
+        if self.rain_bypass:
+            _LOGGER.debug("%s: controllo pioggia ignorato per bypass", self.name)
+            self.rain_detected = False
+            return False
+
         blocked = False
         if self.rain_mode == RAIN_SENSOR and self.rain_entity:
             blocked = self._rain_from_sensor()

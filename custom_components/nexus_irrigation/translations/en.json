@@ -156,6 +156,27 @@
       "et0": {
         "name": "Evapotranspiration"
       }
+    },
+    "select": {
+      "day_mode": {
+        "name": "Day mode",
+        "state": {
+          "weekly": "Days of the week",
+          "odd": "Odd days of the month",
+          "even": "Even days of the month",
+          "cyclic": "Every N days"
+        }
+      }
+    },
+    "switch": {
+      "rain_bypass": {
+        "name": "Ignore rain"
+      }
+    },
+    "number": {
+      "cycle_days": {
+        "name": "Cycle interval"
+      }
     }
   }
 }

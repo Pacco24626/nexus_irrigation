@@ -9,6 +9,7 @@ MANUFACTURER = "Nexus-T"
 MODEL = "Centralina irrigazione"
 
 PLATFORMS: list[Platform] = [
+    Platform.SELECT,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.NUMBER,
@@ -43,6 +44,7 @@ CONF_TIPO_PRATO = "grass_type"
 CONF_KC = "crop_coefficient"
 CONF_COSTA = "coastal"
 CONF_ET0_SENSOR = "et0_sensor"
+CONF_ZONE_DIVIDER = "divider"
 
 # --- Modalita' sorgente pioggia ----------------------------------------------
 RAIN_NONE = "none"
@@ -69,10 +71,38 @@ KEY_NEXT_CYCLE = "next_cycle"
 KEY_RAIN = "rain"
 KEY_RESERVE = "reserve"
 KEY_ET0 = "et0"
+KEY_RAIN_BYPASS = "rain_bypass"
+KEY_DAY_MODE = "day_mode"
+KEY_CYCLE_DAYS = "cycle_days"
+KEY_ZONE_DIVIDER_PREFIX = "divider_"
+
+
+def zone_divider_key(zone_id: str) -> str:
+    return f"{KEY_ZONE_DIVIDER_PREFIX}{zone_id}"
 KEY_RUNNING = "running"
 KEY_MASTER = "master"
 
 KEY_DAY_PREFIX = "day_"
+# --- Modalita' dei giorni di irrigazione --------------------------------------
+# Le prime tre vengono dalle centraline da giardino. Pari e dispari non sono
+# un vezzo: molti comuni li impongono durante le restrizioni idriche estive.
+# I giorni ciclici sono agronomicamente migliori dei giorni fissi, perche'
+# tengono un ritmo costante invece di lasciare due giorni fra venerdi' e
+# lunedi' e uno fra gli altri.
+MODO_SETTIMANALE = "weekly"
+MODO_DISPARI = "odd"
+MODO_PARI = "even"
+MODO_CICLICO = "cyclic"
+MODI_GIORNI = [MODO_SETTIMANALE, MODO_DISPARI, MODO_PARI, MODO_CICLICO]
+DEFAULT_MODO_GIORNI = MODO_SETTIMANALE
+DEFAULT_CICLO_GIORNI = 3
+
+# Quanto si attende che una valvola confermi l'apertura, e quante volte si
+# ripete il comando. Una zona che non apre irriga per zero minuti in
+# silenzio, e te ne accorgi dal prato tre settimane dopo.
+ATTESA_APERTURA = 6.0
+TENTATIVI_APERTURA = 3
+
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 def zone_duration_key(zone_id: str) -> str:

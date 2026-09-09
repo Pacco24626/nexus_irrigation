@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DAY_KEYS, DOMAIN, KEY_DAY_PREFIX, KEY_ENABLE, zone_manual_key
+from .const import KEY_RAIN_BYPASS, DAY_KEYS, DOMAIN, KEY_DAY_PREFIX, KEY_ENABLE, zone_manual_key
 from .controller import IrrigationController, Zone
 from .entity import IrrigationEntity
 
@@ -21,7 +21,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     controller: IrrigationController = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SwitchEntity] = [EnableSwitch(controller)]
+    entities: list[SwitchEntity] = [
+        EnableSwitch(controller),
+        RainBypassSwitch(controller),
+    ]
     entities += [DaySwitch(controller, index) for index in range(7)]
     entities += [ZoneManualSwitch(controller, zone) for zone in controller.zones]
     async_add_entities(entities)
@@ -51,6 +54,35 @@ class EnableSwitch(IrrigationEntity, SwitchEntity, RestoreEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         self.controller.set_enabled(False)
 
+
+class RainBypassSwitch(IrrigationEntity, SwitchEntity, RestoreEntity):
+    """Ignora il controllo pioggia finche' resta acceso.
+
+    Serve dopo una semina o la posa di un tappeto erboso, quando si deve
+    bagnare tutti i giorni a prescindere dal meteo. Senza, l'unica strada
+    sarebbe avviare a mano ogni volta o disattivare il bilancio idrico.
+    """
+
+    _attr_name = "Ignora la pioggia"
+    _attr_icon = "mdi:weather-cloudy-alert"
+
+    def __init__(self, controller: IrrigationController) -> None:
+        super().__init__(controller, KEY_RAIN_BYPASS)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            self.controller.set_rain_bypass(last.state == "on")
+
+    @property
+    def is_on(self) -> bool:
+        return self.controller.rain_bypass
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self.controller.set_rain_bypass(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self.controller.set_rain_bypass(False)
 
 class DaySwitch(IrrigationEntity, SwitchEntity, RestoreEntity):
     """Un giorno della settimana in cui il ciclo automatico puo' partire."""

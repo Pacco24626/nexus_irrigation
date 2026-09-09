@@ -62,8 +62,57 @@ Per ogni impianto viene creato un dispositivo con:
 | `sensor.<impianto>_riserva_idrica` | Millimetri stimati nella zona radicale |
 | `sensor.<impianto>_evapotraspirazione` | ET₀ del giorno, calcolata con FAO 56 |
 | `binary_sensor.<impianto>_pioggia` | Esito dell'ultimo controllo pioggia |
+| `select.<impianto>_modalita_giorni` | Settimanale, dispari, pari o ciclico |
+| `number.<impianto>_intervallo_giorni` | Ogni quanti giorni, in modalità ciclica |
+| `number.<impianto>_<zona>_ogni` | Ogni quanti cicli tocca a quella zona |
+| `switch.<impianto>_ignora_la_pioggia` | Bypass del controllo pioggia |
 | `binary_sensor.<impianto>_in_irrigazione` | Acceso mentre una zona irriga |
 | `binary_sensor.<impianto>_master` | Solo con master configurato: stato della valvola generale |
+
+## Quando irrigare
+
+Quattro modi, gli stessi delle centraline da giardino, scelti dal selettore
+**modalità giorni**:
+
+| Modo | Cosa fa |
+|---|---|
+| Giorni della settimana | Gli interruttori lunedì…domenica, come prima |
+| Giorni dispari | 1, 3, 5… del mese |
+| Giorni pari | 2, 4, 6… del mese |
+| Ogni N giorni | Passo costante, con l'intervallo impostabile da 1 a 30 |
+
+Pari e dispari non sono un vezzo: **molti comuni li impongono** durante le
+restrizioni idriche estive. I giorni ciclici sono agronomicamente migliori dei
+giorni fissi, perché tengono un ritmo costante — «lunedì, mercoledì, venerdì»
+lascia due giorni fra venerdì e lunedì e uno fra gli altri.
+
+Negli ultimi tre modi gli interruttori dei giorni vengono ignorati.
+
+### Il divisore per zona
+
+Ogni zona ha un numero **ogni**: 1 significa a tutti i cicli, 3 una volta su
+tre. È la versione economica dei programmi separati per zona — il prato a ogni
+giro, la siepe una volta su tre — e costa un numero invece di un secondo
+calendario.
+
+### Ignora la pioggia
+
+Un interruttore che sospende il controllo pioggia finché resta acceso. Serve
+dopo una semina o la posa di un tappeto erboso, quando si deve bagnare tutti i
+giorni a prescindere dal meteo.
+
+### Se una valvola non si apre
+
+Le centraline da giardino rilevano il guasto misurando la corrente sul
+solenoide. Noi la corrente non la vediamo, ma vediamo l'equivalente: dopo il
+comando di apertura si **controlla che la valvola si dichiari aperta**, con tre
+tentativi e sei secondi di attesa ciascuno.
+
+Se non risponde, la zona viene **saltata** invece di restare in attesa a
+rubinetto chiuso, arriva una notifica con il nome della zona, e il nome resta
+negli attributi del sensore di stato. Senza questo controllo una zona guasta
+irriga per zero minuti in silenzio, e te ne accorgi dal prato tre settimane
+dopo.
 
 ## Il bilancio idrico
 

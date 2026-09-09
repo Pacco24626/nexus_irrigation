@@ -156,6 +156,27 @@
       "et0": {
         "name": "Evapotraspirazione"
       }
+    },
+    "select": {
+      "day_mode": {
+        "name": "Modalita' giorni",
+        "state": {
+          "weekly": "Giorni della settimana",
+          "odd": "Giorni dispari del mese",
+          "even": "Giorni pari del mese",
+          "cyclic": "Ogni N giorni"
+        }
+      }
+    },
+    "switch": {
+      "rain_bypass": {
+        "name": "Ignora la pioggia"
+      }
+    },
+    "number": {
+      "cycle_days": {
+        "name": "Intervallo giorni"
+      }
     }
   }
 }
