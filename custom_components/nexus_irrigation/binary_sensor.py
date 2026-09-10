@@ -67,6 +67,7 @@ class RainBinarySensor(IrrigationEntity, BinarySensorEntity, RestoreEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
+            "motivo": self.controller.rain_reason,
             "rain_mode": self.controller.rain_mode,
             "source": self.controller.rain_entity,
             "threshold_mm": self.controller.rain_threshold,

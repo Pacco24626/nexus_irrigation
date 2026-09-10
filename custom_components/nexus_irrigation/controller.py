@@ -188,6 +188,10 @@ class IrrigationController:
         self.cycle_days: int = DEFAULT_CICLO_GIORNI
         self.cycle_count: int = 0
         self.zone_non_aperte: list[str] = []
+        # Perche' l'ultimo controllo pioggia ha deciso cosi'. Serve alla
+        # notifica e al sensore: una soglia citata a caso e' peggio di
+        # nessuna spiegazione.
+        self.rain_reason: str = ""
         # Si parte a meta' serbatoio: ne' assetato ne' zuppo, cosi' i primi
         # giorni il modello non prende una decisione forte su niente.
         self.reserve: float = self.soil_capacity / 2
@@ -454,8 +458,7 @@ class IrrigationController:
                 self.notify()
                 persistent_notification.async_create(
                     self.hass,
-                    f"Ciclo di {self.name} non eseguito: pioggia rilevata o "
-                    f"prevista oltre la soglia di {self.rain_threshold} mm.",
+                    f"Ciclo di {self.name} non eseguito. {self.rain_reason}",
                     title="Irrigazione saltata",
                     notification_id=f"{DOMAIN}_{self.entry.entry_id}_rain",
                 )
@@ -843,6 +846,7 @@ class IrrigationController:
             self.rain_detected = False
             return False
 
+        self.rain_reason = ""
         blocked = False
         if self.rain_mode == RAIN_SENSOR and self.rain_entity:
             blocked = self._rain_from_sensor()
@@ -863,9 +867,18 @@ class IrrigationController:
             return False
 
         if self.rain_entity.startswith("binary_sensor."):
-            return state.state == "on"
+            bagnato = state.state == "on"
+            if bagnato:
+                self.rain_reason = f"Il sensore {self.rain_entity} segnala pioggia."
+            return bagnato
         try:
-            return float(state.state) >= self.rain_threshold
+            misurati = float(state.state)
+            if misurati >= self.rain_threshold:
+                self.rain_reason = (
+                    f"Il pluviometro segna {misurati:.1f} mm, "
+                    f"soglia {self.rain_threshold:.1f} mm."
+                )
+            return misurati >= self.rain_threshold
         except (TypeError, ValueError):
             _LOGGER.warning(
                 "%s: valore non numerico da %s (%s)",
@@ -973,6 +986,12 @@ class IrrigationController:
         if self.balance_enabled:
             self._deplete(dt_util.now())
             disponibile = self.reserve + prevista
+            if disponibile >= self.reserve_threshold:
+                self.rain_reason = (
+                    f"Il terreno ha {self.reserve:.1f} mm di riserva e ne sono "
+                    f"previsti altri {prevista:.1f}: {disponibile:.1f} mm in tutto, "
+                    f"sopra la soglia di {self.reserve_threshold:.1f} mm."
+                )
             _LOGGER.debug(
                 "%s: riserva %.1f mm piu' %.1f mm previsti, soglia %.1f",
                 self.name,
@@ -983,6 +1002,13 @@ class IrrigationController:
             return disponibile >= self.reserve_threshold
 
         totale = caduta + prevista
+        if totale >= self.rain_threshold:
+            self.rain_reason = (
+                f"Sono caduti {caduta:.1f} mm nelle ultime {self.rain_hours_past} ore "
+                f"e ne sono previsti {prevista:.1f} nelle prossime {self.rain_hours}: "
+                f"{totale:.1f} mm in tutto, sopra la soglia di "
+                f"{self.rain_threshold:.1f} mm."
+            )
         _LOGGER.debug(
             "%s: %.1f mm caduti nelle ultime %d ore piu' %.1f mm previsti nelle "
             "prossime %d, soglia %.1f",
