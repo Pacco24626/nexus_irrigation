@@ -147,7 +147,8 @@
         "state": {
           "idle": "Inattivo",
           "running": "In irrigazione",
-          "rain_skipped": "Saltato per pioggia"
+          "rain_skipped": "Saltato per pioggia",
+          "reserve_skipped": "Saltato: riserva idrica sufficiente"
         }
       },
       "reserve": {

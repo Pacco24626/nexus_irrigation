@@ -130,7 +130,12 @@ class StatusSensor(IrrigationEntity, SensorEntity):
             "cycle_days": controller.cycle_days,
             "cycle_count": controller.cycle_count,
             "rain_bypass": controller.rain_bypass,
-            "zone_non_aperte": controller.zone_non_aperte,
+            # Perche' l'ultimo ciclo e' saltato, con la regola che ha deciso.
+            "skip_reason": controller.skip_reason,
+            # Copia: la lista del controller cresce sul posto, e Home Assistant
+            # non vedrebbe il cambio (confronta con gli attributi salvati, che
+            # ne tengono solo il riferimento).
+            "zone_non_aperte": list(controller.zone_non_aperte),
         }
 
 

@@ -56,7 +56,10 @@ RAIN_MODES = [RAIN_NONE, RAIN_SENSOR, RAIN_WEATHER]
 STATUS_IDLE = "idle"
 STATUS_RUNNING = "running"
 STATUS_RAIN_SKIPPED = "rain_skipped"
-STATUS_OPTIONS = [STATUS_IDLE, STATUS_RUNNING, STATUS_RAIN_SKIPPED]
+# Saltato perche' il bilancio idrico dice che il terreno ha ancora acqua:
+# non e' pioggia, e chiamarlo cosi' faceva credere che avesse piovuto.
+STATUS_RESERVE_SKIPPED = "reserve_skipped"
+STATUS_OPTIONS = [STATUS_IDLE, STATUS_RUNNING, STATUS_RAIN_SKIPPED, STATUS_RESERVE_SKIPPED]
 
 # --- Chiavi delle entita' -----------------------------------------------------
 # Usate sia per gli unique_id sia dalla card per risalire alle entita'.

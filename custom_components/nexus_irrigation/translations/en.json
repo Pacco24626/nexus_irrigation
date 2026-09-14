@@ -147,7 +147,8 @@
         "state": {
           "idle": "Idle",
           "running": "Watering",
-          "rain_skipped": "Skipped for rain"
+          "rain_skipped": "Skipped for rain",
+          "reserve_skipped": "Skipped: enough water in the soil"
         }
       },
       "reserve": {

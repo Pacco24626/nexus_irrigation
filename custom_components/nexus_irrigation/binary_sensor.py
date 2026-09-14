@@ -29,10 +29,16 @@ async def async_setup_entry(
 
 
 class RainBinarySensor(IrrigationEntity, BinarySensorEntity, RestoreEntity):
-    """Esito dell'ultimo controllo pioggia.
+    """Piove abbastanza da contare.
 
-    Vale quanto rilevato all'ultimo tentativo di ciclo: non e' un sensore
-    meteo in tempo reale.
+    Acceso se la pioggia caduta nelle ultime ore piu' quella prevista supera
+    la soglia, o se il pluviometro e' bagnato. Si aggiorna a ogni campione
+    meteo e a ogni cambio del pluviometro; con la sorgente meteo e zero ore
+    passate non si campiona, e vale quanto visto all'ultimo ciclo.
+
+    Non dice se il ciclo e' stato saltato: quello lo dice il sensore Stato.
+    Col bilancio idrico il ciclo lo salta la riserva del terreno, e un prato
+    ancora umido non vuol dire che stia piovendo.
     """
 
     _attr_name = "Pioggia"
@@ -51,8 +57,11 @@ class RainBinarySensor(IrrigationEntity, BinarySensorEntity, RestoreEntity):
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last and isinstance(last.attributes.get("rain_log"), dict):
+            ripristinato = {k: float(v) for k, v in last.attributes["rain_log"].items()}
+            # Se un campione e' gia' arrivato, per la sua ora vale lui: e' piu'
+            # recente di quanto salvato prima del riavvio.
             self.controller.rain_log.update(
-                {k: float(v) for k, v in last.attributes["rain_log"].items()}
+                {k: v for k, v in ripristinato.items() if k not in self.controller.rain_log}
             )
             self.controller.rain_recent = self.controller.recent_rain_mm()
 
@@ -78,7 +87,12 @@ class RainBinarySensor(IrrigationEntity, BinarySensorEntity, RestoreEntity):
             "total_mm": round(
                 self.controller.rain_recent + self.controller.rain_forecast, 1
             ),
-            "rain_log": self.controller.rain_log,
+            # Una copia, non il dizionario del controller: Home Assistant
+            # confronta gli attributi con quelli salvati, che ne tengono solo
+            # il riferimento. Modificato sul posto risultava sempre uguale, lo
+            # stato non veniva riscritto e al riavvio si ripristinava un
+            # registro vecchio di giorni.
+            "rain_log": dict(self.controller.rain_log),
         }
 
 

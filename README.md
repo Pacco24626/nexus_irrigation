@@ -56,12 +56,12 @@ Per ogni impianto viene creato un dispositivo con:
 | `time.<impianto>_ora_di_avvio` | Orario del ciclo automatico |
 | `button.<impianto>_avvia_ciclo` | Giro extra, salta il controllo pioggia |
 | `button.<impianto>_arresta` | Arresto immediato, chiude tutto |
-| `sensor.<impianto>_stato` | `idle` / `running` / `rain_skipped` |
+| `sensor.<impianto>_stato` | `idle` / `running` / `rain_skipped` (saltato per pioggia) / `reserve_skipped` (saltato perché il terreno ha ancora acqua). L'attributo `skip_reason` dice perché |
 | `sensor.<impianto>_ultimo_ciclo` | Timestamp |
 | `sensor.<impianto>_prossimo_ciclo` | Timestamp del prossimo avvio |
 | `sensor.<impianto>_riserva_idrica` | Millimetri stimati nella zona radicale |
 | `sensor.<impianto>_evapotraspirazione` | ET₀ del giorno, calcolata con FAO 56 |
-| `binary_sensor.<impianto>_pioggia` | Esito dell'ultimo controllo pioggia |
+| `binary_sensor.<impianto>_pioggia` | Acceso se piove abbastanza da contare: pioggia caduta più prevista sopra la soglia, o pluviometro bagnato. Si aggiorna a ogni campione meteo e a ogni cambio del pluviometro |
 | `select.<impianto>_modalita_giorni` | Settimanale, dispari, pari o ciclico |
 | `number.<impianto>_intervallo_giorni` | Ogni quanti giorni, in modalità ciclica |
 | `number.<impianto>_<zona>_ogni` | Ogni quanti cicli tocca a quella zona |
@@ -147,9 +147,16 @@ capisce in due settimane se la taratura regge.
 Mettendo la capacità a **zero** il bilancio si disattiva e si torna al semplice
 confronto fra i millimetri della finestra e la soglia.
 
-Una precisazione: il servizio delle previsioni restituisce solo il futuro. La
-pioggia già caduta la costruisce l'integrazione campionando ogni quarto d'ora
-la precipitazione dell'ora in corso, un valore per ciascuna ora. È una stima
+Con il bilancio attivo, a saltare il ciclo è la riserva, e lo stato diventa
+`reserve_skipped`. Il sensore **pioggia** resta un fatto meteo: dice se sta
+piovendo abbastanza da contare, non se il ciclo è stato saltato. Un prato ancora
+umido dopo il temporale di due giorni fa salta il ciclo con il sensore pioggia
+spento, ed è giusto così.
+
+Una precisazione: il servizio delle previsioni restituisce solo il futuro, a
+partire dall'ora successiva. La pioggia già caduta la costruisce l'integrazione
+campionando ogni quarto d'ora la prima ora prevista, un valore per ciascuna ora;
+quell'ora poi non si conta una seconda volta fra le previste. È una stima
 del servizio meteo, non la misura di un pluviometro, ed esiste solo da quando
 l'integrazione è in funzione. Con una sonda di umidità nel terreno si usa la
 modalità *sensore* e il modello non serve più.

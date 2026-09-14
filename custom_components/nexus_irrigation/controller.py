@@ -14,7 +14,7 @@ from datetime import date, datetime, time, timedelta
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.const import (
     EVENT_HOMEASSISTANT_STARTED,
     STATE_UNAVAILABLE,
@@ -22,6 +22,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.event import (
     async_track_point_in_time,
+    async_track_state_change_event,
     async_track_time_interval,
 )
 from homeassistant.util import dt as dt_util
@@ -81,6 +82,7 @@ from .const import (
     RAIN_WEATHER,
     STATUS_IDLE,
     STATUS_RAIN_SKIPPED,
+    STATUS_RESERVE_SKIPPED,
     STATUS_RUNNING,
     WATCHDOG_INTERVAL,
     WATCHDOG_STRIKES,
@@ -158,13 +160,17 @@ class IrrigationController:
         self.zone_ends_at: datetime | None = None
         self.last_cycle: datetime | None = None
         self.next_cycle: datetime | None = None
+        # Piove abbastanza da contare: caduta piu' prevista sopra la soglia, o
+        # il pluviometro bagnato. E' un fatto meteo, non la decisione del
+        # ciclo: col bilancio idrico a saltare il ciclo e' la riserva.
         self.rain_detected: bool = False
         self.rain_recent: float = 0.0
         self.rain_forecast: float = 0.0
-        # Pioggia caduta, ora per ora: chiave l'ora ISO, valore i mm.
-        # Il servizio delle previsioni restituisce solo il futuro, quindi
-        # il passato se lo costruisce l'integrazione campionando l'ora in
-        # corso. E' una stima di met.no, non la misura di un pluviometro.
+        # Pioggia caduta, ora per ora: chiave l'ora UTC ("2026-09-14T06"),
+        # valore i mm. Il servizio delle previsioni restituisce solo il
+        # futuro, a partire dall'ora successiva, quindi il passato se lo
+        # costruisce l'integrazione campionando la prima ora prevista. E' una
+        # stima di met.no, non la misura di un pluviometro.
         self.rain_log: dict[str, float] = {}
 
         self.soil_capacity: float = float(
@@ -188,10 +194,12 @@ class IrrigationController:
         self.cycle_days: int = DEFAULT_CICLO_GIORNI
         self.cycle_count: int = 0
         self.zone_non_aperte: list[str] = []
-        # Perche' l'ultimo controllo pioggia ha deciso cosi'. Serve alla
-        # notifica e al sensore: una soglia citata a caso e' peggio di
-        # nessuna spiegazione.
+        # Due spiegazioni distinte, perche' sono due domande distinte: perche'
+        # il sensore pioggia e' acceso, e perche' l'ultimo ciclo e' saltato.
+        # Tenerle in una sola faceva citare la soglia della pioggia quando a
+        # decidere era stata la riserva.
         self.rain_reason: str = ""
+        self.skip_reason: str = ""
         # Si parte a meta' serbatoio: ne' assetato ne' zuppo, cosi' i primi
         # giorni il modello non prende una decisione forte su niente.
         self.reserve: float = self.soil_capacity / 2
@@ -237,7 +245,19 @@ class IrrigationController:
                 self.hass.bus.async_listen_once(
                     EVENT_HOMEASSISTANT_STARTED, self._async_sample_on_started
                 )
+        elif self.rain_mode == RAIN_SENSOR and self.rain_entity:
+            # Il sensore pioggia segue il pluviometro, non l'ultimo ciclo:
+            # altrimenti resta bagnato per giorni dopo che si e' asciugato.
+            self._unsub_rain = async_track_state_change_event(
+                self.hass, [self.rain_entity], self._rain_entity_changed
+            )
+            self._rain_from_sensor(al_ciclo=False)
         self.reschedule()
+
+    @callback
+    def _rain_entity_changed(self, _event: Event) -> None:
+        self._rain_from_sensor(al_ciclo=False)
+        self.notify()
 
     async def _async_close_on_started(self, _event) -> None:
         """Chiusura di sicurezza appena Home Assistant e' completamente avviato."""
@@ -453,12 +473,15 @@ class IrrigationController:
 
     async def _async_run_cycle(self, check_rain: bool) -> None:
         try:
-            if check_rain and await self._async_rain_blocks():
-                self.status = STATUS_RAIN_SKIPPED
+            # Il motivo di un salto vale finche' non parte un altro ciclo.
+            self.skip_reason = ""
+            salto = await self._async_skip_status() if check_rain else None
+            if salto is not None:
+                self.status = salto
                 self.notify()
                 persistent_notification.async_create(
                     self.hass,
-                    f"Ciclo di {self.name} non eseguito. {self.rain_reason}",
+                    f"Ciclo di {self.name} non eseguito. {self.skip_reason}",
                     title="Irrigazione saltata",
                     notification_id=f"{DOMAIN}_{self.entry.entry_id}_rain",
                 )
@@ -839,54 +862,93 @@ class IrrigationController:
     # -------------------------------------------------------------------------
     # Pioggia
     # -------------------------------------------------------------------------
-    async def _async_rain_blocks(self) -> bool:
-        """True se il ciclo va saltato per pioggia."""
+    async def _async_skip_status(self) -> str | None:
+        """Lo stato con cui saltare il ciclo, o None se si irriga.
+
+        Due regole, ciascuna col suo stato: senza bilancio decide la pioggia,
+        col bilancio decide la riserva del terreno, che la pioggia la contiene
+        gia'. La pioggia si rivaluta comunque, cosi' il sensore resta vero
+        anche quando a decidere e' la riserva.
+        """
         if self.rain_bypass:
             _LOGGER.debug("%s: controllo pioggia ignorato per bypass", self.name)
-            self.rain_detected = False
-            return False
+            return None
 
-        self.rain_reason = ""
-        blocked = False
+        salto: str | None = None
         if self.rain_mode == RAIN_SENSOR and self.rain_entity:
-            blocked = self._rain_from_sensor()
+            if self._rain_from_sensor(al_ciclo=True):
+                salto = STATUS_RAIN_SKIPPED
+                self.skip_reason = self.rain_reason
         elif self.rain_mode == RAIN_WEATHER and self.rain_entity:
-            blocked = await self._async_rain_from_weather()
-        self.rain_detected = blocked
+            forecast = await self._async_hourly_forecast()
+            if forecast is None:
+                _LOGGER.warning("%s: nessuna previsione disponibile, ciclo eseguito", self.name)
+                return None
+            prevista = self._rain_from_forecast(forecast)
+            if self.balance_enabled:
+                self._deplete(dt_util.now())
+                disponibile = self.reserve + prevista
+                _LOGGER.debug(
+                    "%s: riserva %.1f mm piu' %.1f mm previsti, soglia %.1f",
+                    self.name,
+                    self.reserve,
+                    prevista,
+                    self.reserve_threshold,
+                )
+                if disponibile >= self.reserve_threshold:
+                    salto = STATUS_RESERVE_SKIPPED
+                    self.skip_reason = (
+                        f"Il terreno ha {self.reserve:.1f} mm di riserva e ne sono "
+                        f"previsti altri {prevista:.1f}: {disponibile:.1f} mm in tutto, "
+                        f"sopra la soglia di {self.reserve_threshold:.1f} mm."
+                    )
+            elif self.rain_detected:
+                salto = STATUS_RAIN_SKIPPED
+                self.skip_reason = self.rain_reason
         self.notify()
-        return blocked
+        return salto
 
-    def _rain_from_sensor(self) -> bool:
+    def _rain_from_sensor(self, al_ciclo: bool) -> bool:
+        """Legge il pluviometro e aggiorna il sensore pioggia.
+
+        Fuori dal ciclo (a ogni cambio del pluviometro) non si scrive nel log:
+        un pluviometro che va e viene lo riempirebbe di avvisi.
+        """
+        self.rain_detected = False
+        self.rain_reason = ""
         state = self.hass.states.get(self.rain_entity)
         if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            _LOGGER.warning(
-                "%s: sensore pioggia %s non disponibile, ciclo eseguito",
-                self.name,
-                self.rain_entity,
-            )
+            if al_ciclo:
+                _LOGGER.warning(
+                    "%s: sensore pioggia %s non disponibile, ciclo eseguito",
+                    self.name,
+                    self.rain_entity,
+                )
             return False
 
         if self.rain_entity.startswith("binary_sensor."):
-            bagnato = state.state == "on"
-            if bagnato:
+            self.rain_detected = state.state == "on"
+            if self.rain_detected:
                 self.rain_reason = f"Il sensore {self.rain_entity} segnala pioggia."
-            return bagnato
+            return self.rain_detected
         try:
             misurati = float(state.state)
-            if misurati >= self.rain_threshold:
-                self.rain_reason = (
-                    f"Il pluviometro segna {misurati:.1f} mm, "
-                    f"soglia {self.rain_threshold:.1f} mm."
-                )
-            return misurati >= self.rain_threshold
         except (TypeError, ValueError):
-            _LOGGER.warning(
-                "%s: valore non numerico da %s (%s)",
-                self.name,
-                self.rain_entity,
-                state.state,
-            )
+            if al_ciclo:
+                _LOGGER.warning(
+                    "%s: valore non numerico da %s (%s)",
+                    self.name,
+                    self.rain_entity,
+                    state.state,
+                )
             return False
+        self.rain_detected = misurati >= self.rain_threshold
+        if self.rain_detected:
+            self.rain_reason = (
+                f"Il pluviometro segna {misurati:.1f} mm, "
+                f"soglia {self.rain_threshold:.1f} mm."
+            )
+        return self.rain_detected
 
     async def _async_hourly_forecast(self) -> list[dict] | None:
         """Le previsioni orarie, o None se non si riesce a ottenerle."""
@@ -910,11 +972,27 @@ class IrrigationController:
 
         return (response or {}).get(self.rain_entity, {}).get("forecast") or None
 
-    async def _async_sample_rain(self, _now=None) -> None:
-        """Registra la precipitazione dell'ora in corso.
+    @staticmethod
+    def _ora_utc(valore) -> str | None:
+        """La chiave del registro pioggia: l'ora in UTC, come "2026-09-14T06".
 
-        Si tiene un valore per ciascuna ora, sovrascritto a ogni campione:
-        campionare piu' volte la stessa ora non la conta piu' volte.
+        Le previsioni di Home Assistant arrivano in UTC, l'orologio no. Le
+        chiavi si confrontano come testo con l'ora di adesso, quindi vanno
+        tutte nello stesso fuso: prima si mescolavano ore UTC e ore locali, e
+        la finestra delle ultime ore risultava spostata di due ore d'estate.
+        """
+        istante = valore if isinstance(valore, datetime) else dt_util.parse_datetime(str(valore))
+        if istante is None:
+            return None
+        return dt_util.as_utc(istante).strftime("%Y-%m-%dT%H")
+
+    async def _async_sample_rain(self, _now=None) -> None:
+        """Registra la prima ora prevista e rivaluta il sensore pioggia.
+
+        Il servizio non restituisce l'ora in corso ma parte dalla successiva:
+        il valore registrato e' la previsione a meno di un'ora, sovrascritta a
+        ogni campione. Campionare piu' volte la stessa ora non la conta piu'
+        volte.
         """
         forecast = await self._async_hourly_forecast()
         if not forecast:
@@ -922,15 +1000,17 @@ class IrrigationController:
 
         try:
             corrente = forecast[0]
-            ora = str(corrente.get("datetime"))[:13]
+            ora = self._ora_utc(corrente.get("datetime"))
             mm = float(corrente.get("precipitation") or 0)
-        except (IndexError, TypeError, ValueError):
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return
+        if ora is None:
             return
 
         precedente = self.rain_log.get(ora, 0.0)
         self.rain_log[ora] = mm
         self._prune_rain_log()
-        self.rain_recent = self.recent_rain_mm()
+        self._rain_from_forecast(forecast)
 
         if self.balance_enabled:
             # L'ET0 si aggiorna qui: un solo timer per entrambe le cose, e il
@@ -947,8 +1027,8 @@ class IrrigationController:
         """Butta via le ore uscite dalla finestra, piu' un margine."""
         if not self.rain_log:
             return
-        limite = dt_util.now() - timedelta(hours=max(self.rain_hours_past, 1) + 6)
-        soglia = limite.isoformat()[:13]
+        limite = dt_util.utcnow() - timedelta(hours=max(self.rain_hours_past, 1) + 6)
+        soglia = limite.strftime("%Y-%m-%dT%H")
         for ora in [o for o in self.rain_log if o < soglia]:
             del self.rain_log[ora]
 
@@ -956,59 +1036,47 @@ class IrrigationController:
         """Millimetri caduti nelle ore passate della finestra."""
         if self.rain_hours_past <= 0 or not self.rain_log:
             return 0.0
-        limite = dt_util.now() - timedelta(hours=self.rain_hours_past)
-        soglia = limite.isoformat()[:13]
+        limite = dt_util.utcnow() - timedelta(hours=self.rain_hours_past)
+        soglia = limite.strftime("%Y-%m-%dT%H")
         return round(sum(mm for ora, mm in self.rain_log.items() if ora >= soglia), 1)
 
-    async def _async_rain_from_weather(self) -> bool:
-        """Bilancio della pioggia: quella gia' caduta piu' quella prevista.
+    def _rain_from_forecast(self, forecast: list[dict]) -> float:
+        """Rivaluta il sensore pioggia; restituisce i millimetri previsti.
 
         Guardare solo avanti lasciava passare il caso piu' ovvio — ha diluviato
         stamattina e il cielo si e' aperto — in cui il terreno e' zuppo ma la
-        previsione e' asciutta.
-        """
-        forecast = await self._async_hourly_forecast()
-        if forecast is None:
-            _LOGGER.warning("%s: nessuna previsione disponibile, ciclo eseguito", self.name)
-            return False
+        previsione e' asciutta: per questo si somma anche la pioggia caduta.
 
+        Le ore gia' registrate non si contano fra le previste. La prima ora
+        prevista finisce nel registro a ogni campione, e sommarla di nuovo la
+        contava due volte: nel totale della pioggia e, col bilancio, anche
+        sopra la riserva che l'aveva gia' accreditata.
+        """
         prevista = 0.0
         for item in forecast[: self.rain_hours]:
             try:
+                if (
+                    self.rain_hours_past > 0
+                    and self._ora_utc(item.get("datetime")) in self.rain_log
+                ):
+                    continue
                 prevista += float(item.get("precipitation") or 0)
-            except (TypeError, ValueError):
+            except (AttributeError, TypeError, ValueError):
                 continue
 
         caduta = self.recent_rain_mm()
+        totale = caduta + prevista
         self.rain_forecast = round(prevista, 1)
         self.rain_recent = caduta
-
-        if self.balance_enabled:
-            self._deplete(dt_util.now())
-            disponibile = self.reserve + prevista
-            if disponibile >= self.reserve_threshold:
-                self.rain_reason = (
-                    f"Il terreno ha {self.reserve:.1f} mm di riserva e ne sono "
-                    f"previsti altri {prevista:.1f}: {disponibile:.1f} mm in tutto, "
-                    f"sopra la soglia di {self.reserve_threshold:.1f} mm."
-                )
-            _LOGGER.debug(
-                "%s: riserva %.1f mm piu' %.1f mm previsti, soglia %.1f",
-                self.name,
-                self.reserve,
-                prevista,
-                self.reserve_threshold,
-            )
-            return disponibile >= self.reserve_threshold
-
-        totale = caduta + prevista
-        if totale >= self.rain_threshold:
-            self.rain_reason = (
-                f"Sono caduti {caduta:.1f} mm nelle ultime {self.rain_hours_past} ore "
-                f"e ne sono previsti {prevista:.1f} nelle prossime {self.rain_hours}: "
-                f"{totale:.1f} mm in tutto, sopra la soglia di "
-                f"{self.rain_threshold:.1f} mm."
-            )
+        self.rain_detected = totale >= self.rain_threshold
+        self.rain_reason = (
+            f"Sono caduti {caduta:.1f} mm nelle ultime {self.rain_hours_past} ore "
+            f"e ne sono previsti {prevista:.1f} nelle prossime {self.rain_hours}: "
+            f"{totale:.1f} mm in tutto, sopra la soglia di "
+            f"{self.rain_threshold:.1f} mm."
+            if self.rain_detected
+            else ""
+        )
         _LOGGER.debug(
             "%s: %.1f mm caduti nelle ultime %d ore piu' %.1f mm previsti nelle "
             "prossime %d, soglia %.1f",
@@ -1019,4 +1087,4 @@ class IrrigationController:
             self.rain_hours,
             self.rain_threshold,
         )
-        return totale >= self.rain_threshold
+        return prevista
