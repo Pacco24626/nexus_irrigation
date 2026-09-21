@@ -24,6 +24,7 @@ CONF_ZONE_ID = "id"
 CONF_ZONE_NAME = "name"
 CONF_ZONE_ENTITY = "entity_id"
 CONF_ZONE_MINUTES = "minutes"
+CONF_ZONE_TYPE = "type"
 CONF_ADD_ANOTHER = "add_another"
 
 CONF_USE_MASTER = "use_master"
@@ -45,6 +46,21 @@ CONF_KC = "crop_coefficient"
 CONF_COSTA = "coastal"
 CONF_ET0_SENSOR = "et0_sensor"
 CONF_ZONE_DIVIDER = "divider"
+
+# --- Tipo di zona -------------------------------------------------------------
+# Serve alla scheda per disegnare la zona: prato con gli irrigatori o aiuola a
+# goccia. Sull'irrigazione non cambia niente. Le zone salvate prima della
+# 1.6.0 non hanno la chiave e valgono prato.
+ZONE_TYPE_LAWN = "lawn"
+ZONE_TYPE_DRIP = "drip"
+ZONE_TYPES = [ZONE_TYPE_LAWN, ZONE_TYPE_DRIP]
+DEFAULT_ZONE_TYPE = ZONE_TYPE_LAWN
+
+# --- Scheda Lovelace ----------------------------------------------------------
+# La scheda sta nella cartella www dell'integrazione, che la serve a questo
+# indirizzo e la registra come risorsa: niente da aggiungere a mano.
+CARD_URL_BASE = "/nexus_irrigation"
+CARD_FILE = "nexus-irrigation-card.js"
 
 # --- Modalita' sorgente pioggia ----------------------------------------------
 RAIN_NONE = "none"

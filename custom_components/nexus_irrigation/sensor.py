@@ -38,6 +38,7 @@ from .const import (
     KEY_START_TIME,
     KEY_STATUS,
     KEY_STOP,
+    RAIN_NONE,
     STATUS_OPTIONS,
     zone_duration_key,
     zone_manual_key,
@@ -84,8 +85,12 @@ class StatusSensor(IrrigationEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        # Liste e dizionari si costruiscono nuovi a ogni lettura: Home
+        # Assistant confronta con gli attributi salvati, che ne tengono solo
+        # il riferimento, e una lista cresciuta sul posto non la vedrebbe.
         controller = self.controller
         active = controller.active_zone
+        ciclo = controller.ciclo()
 
         zones = []
         for zone in controller.zones:
@@ -98,10 +103,15 @@ class StatusSensor(IrrigationEntity, SensorEntity):
                     "manual_entity": self._entity_id("switch", zone_manual_key(zone.id)),
                     "running": active == zone.id,
                     "seconds": controller.zone_seconds(zone),
+                    "tipo": zone.tipo,
+                    "minutes": float(zone.duration),
+                    "in_ciclo": zone.id in ciclo,
                 }
             )
 
         return {
+            # La scheda cerca da sola il sensore con questo ruolo.
+            "ruolo": "mappa_irrigazione",
             "installation": controller.name,
             "zones": zones,
             "active_zone": active,
@@ -136,6 +146,32 @@ class StatusSensor(IrrigationEntity, SensorEntity):
             # non vedrebbe il cambio (confronta con gli attributi salvati, che
             # ne tengono solo il riferimento).
             "zone_non_aperte": list(controller.zone_non_aperte),
+            # Il giro per la scheda: in corso, a mano o, da fermo, il prossimo.
+            "ciclo": ciclo,
+            "ciclo_fatte": list(controller.ciclo_fatte),
+            "ciclo_non_aperte": list(controller.ciclo_non_aperte),
+            "in_apertura": controller.in_apertura,
+            "manuale": controller.manuale,
+            "pausa_fra_zone": controller.pausa_fra_zone,
+            "master_lead": controller.master_lead if controller.master_entity else 0,
+            "seasonal": float(controller.seasonal),
+            "consumo_prato_mm": round(controller.consumo_giornaliero, 2),
+            "riserva": {
+                "entita": self._entity_id("sensor", KEY_RESERVE),
+                "soglia": controller.reserve_threshold,
+                "capacita": controller.soil_capacity,
+            }
+            if controller.balance_enabled
+            else None,
+            "pioggia": None
+            if controller.rain_mode == RAIN_NONE
+            else {
+                "rilevata": controller.rain_detected,
+                "caduta_mm": round(controller.rain_recent, 1),
+                "prevista_mm": round(controller.rain_forecast, 1),
+                "ore_passate": controller.rain_hours_past,
+                "ore_previste": controller.rain_hours,
+            },
         }
 
 

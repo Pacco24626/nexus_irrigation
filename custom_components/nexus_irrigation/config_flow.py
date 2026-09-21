@@ -36,11 +36,13 @@ from .const import (
     CONF_ZONE_ID,
     CONF_ZONE_MINUTES,
     CONF_ZONE_NAME,
+    CONF_ZONE_TYPE,
     CONF_ZONES,
     CONF_USE_MASTER,
     DEFAULT_MASTER_LAG,
     DEFAULT_MASTER_LEAD,
     DEFAULT_MINUTES,
+    DEFAULT_ZONE_TYPE,
     DEFAULT_RAIN_HOURS,
     DEFAULT_DAILY_ET,
     DEFAULT_KC,
@@ -57,6 +59,7 @@ from .const import (
     RAIN_MODES,
     RAIN_NONE,
     RAIN_WEATHER,
+    ZONE_TYPES,
 )
 
 
@@ -68,6 +71,14 @@ def _zone_schema(number: int) -> vol.Schema:
             vol.Required(CONF_ZONE_ENTITY): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain=["valve", "switch"])
             ),
+            # Prato o goccia: decide solo come la scheda disegna la zona.
+            vol.Required(CONF_ZONE_TYPE, default=DEFAULT_ZONE_TYPE): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=ZONE_TYPES,
+                    translation_key="zone_type",
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
             vol.Required(CONF_ZONE_MINUTES, default=DEFAULT_MINUTES): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0, max=120, step=1, unit_of_measurement="min",
@@ -77,6 +88,17 @@ def _zone_schema(number: int) -> vol.Schema:
             vol.Optional(CONF_ADD_ANOTHER, default=False): bool,
         }
     )
+
+
+def _zone_data(index: int, user_input: dict[str, Any]) -> dict[str, Any]:
+    """La zona come si salva, dal modulo compilato."""
+    return {
+        CONF_ZONE_ID: f"zone_{index + 1}",
+        CONF_ZONE_NAME: user_input[CONF_ZONE_NAME],
+        CONF_ZONE_ENTITY: user_input[CONF_ZONE_ENTITY],
+        CONF_ZONE_TYPE: user_input.get(CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE),
+        CONF_ZONE_MINUTES: float(user_input[CONF_ZONE_MINUTES]),
+    }
 
 
 _MASTER_SCHEMA = vol.Schema({vol.Required(CONF_USE_MASTER, default=False): bool})
@@ -238,14 +260,7 @@ class NexusIrrigationConfigFlow(ConfigFlow, domain=DOMAIN):
         """Raccoglie una zona e si richiama finche' l'utente vuole aggiungerne."""
         if user_input is not None:
             add_another = user_input.pop(CONF_ADD_ANOTHER, False)
-            self._zones.append(
-                {
-                    CONF_ZONE_ID: f"zone_{len(self._zones) + 1}",
-                    CONF_ZONE_NAME: user_input[CONF_ZONE_NAME],
-                    CONF_ZONE_ENTITY: user_input[CONF_ZONE_ENTITY],
-                    CONF_ZONE_MINUTES: float(user_input[CONF_ZONE_MINUTES]),
-                }
-            )
+            self._zones.append(_zone_data(len(self._zones), user_input))
             if add_another:
                 return await self.async_step_zone()
             return await self.async_step_master()
@@ -338,14 +353,7 @@ class NexusIrrigationOptionsFlow(OptionsFlow):
     async def async_step_zone(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             add_another = user_input.pop(CONF_ADD_ANOTHER, False)
-            self._zones.append(
-                {
-                    CONF_ZONE_ID: f"zone_{len(self._zones) + 1}",
-                    CONF_ZONE_NAME: user_input[CONF_ZONE_NAME],
-                    CONF_ZONE_ENTITY: user_input[CONF_ZONE_ENTITY],
-                    CONF_ZONE_MINUTES: float(user_input[CONF_ZONE_MINUTES]),
-                }
-            )
+            self._zones.append(_zone_data(len(self._zones), user_input))
             if add_another:
                 return await self.async_step_zone()
             return self._save({CONF_ZONES: self._zones})

@@ -15,6 +15,7 @@ dall'interfaccia. Nessuno YAML da scrivere.
 - **Giorni della settimana** selezionabili singolarmente.
 - **Chiusura garantita**: la valvola si chiude anche se il ciclo viene interrotto, e un
   watchdog chiude qualunque valvola resti aperta senza un ciclo attivo.
+- **Scheda animata inclusa**: disegna l'impianto e il giro in corso, e si registra da sola.
 
 ## Installazione via HACS
 
@@ -30,8 +31,8 @@ Requisiti: Home Assistant 2024.12 o superiore.
 Il config flow chiede, nell'ordine:
 
 1. **Nome impianto** — puoi crearne più d'uno (giardino, orto, serra), ognuno indipendente.
-2. **Zone** — nome, valvola, durata base. La spunta *"Aggiungi un'altra zona"* ricicla lo
-   step: nessun limite al numero di zone.
+2. **Zone** — nome, valvola, tipo (prato con irrigatori o goccia), durata base. La spunta
+   *"Aggiungi un'altra zona"* ricicla lo step: nessun limite al numero di zone.
 3. **Valvola master o pompa** — una spunta. Se l'impianto ha un'elettrovalvola generale
    a monte dei settori o un relè che avvia la pompa, la spunti e scegli l'entità; altrimenti
    tiri dritto. Puoi regolare i due ritardi di sequenza, 3 secondi di default.
@@ -255,10 +256,34 @@ rilevazioni consecutive senza un ciclo attivo viene chiusa e viene creata una no
 Le valvole vengono chiuse anche all'avvio di Home Assistant e allo scaricamento
 dell'integrazione.
 
-## Card dedicata
+## La scheda
 
-[Nexus Irrigation Card](https://github.com/Pacco24626/nexus_irrigation_card) — facoltativa.
-Senza di essa l'impianto si comanda benissimo con le card standard.
+Dalla 1.6.0 la scheda animata è **inclusa nell'integrazione**: la serve e la registra da sola
+come risorsa Lovelace, nessun file da aggiungere a mano. Disegna le zone vere — prato con gli
+irrigatori o aiuola a goccia — e il giro in corso: la zona che irriga col conto alla rovescia,
+quelle fatte, quelle in coda con l'orario stimato, quelle che a questo giro non toccano. Da lì
+si avvia una zona a mano, si cambia la durata, si scelgono giorni e ora, si avvia o si arresta
+il ciclo.
+
+```yaml
+type: custom:nexus-irrigation-card
+entity: sensor.giardino_stato
+title: Giardino     # facoltativo
+animazioni: true    # facoltativo: false ferma le animazioni
+```
+
+**Chi aveva la vecchia «Nexus Irrigation Card»**, il repository separato, la rimuova da HACS.
+La nuova ha lo stesso nome, quindi le plance esistenti continuano a funzionare senza
+modifiche; ma con due file che definiscono la stessa scheda vince quello che arriva prima, e
+potrebbe essere la vecchia. Finché resta installata, il log di Home Assistant lo segnala.
+
+### Il tipo di zona
+
+Serve solo al disegno: **prato** con gli irrigatori o **goccia**. Si sceglie nel config flow e
+da **Configura → Zone**; le zone create prima della 1.6.0 valgono prato. Sull'irrigazione non
+cambia niente.
+
+Senza la scheda l'impianto si comanda benissimo con le card standard.
 
 ## Licenza
 

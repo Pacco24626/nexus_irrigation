@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# Schermate generate dalle prove della scheda
+tests/card/schermate/

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Prova Nexus Irrigation</title>
+<link rel="icon" href="data:,">
+<style>
+  /* Le variabili che il tema di Home Assistant da' a ogni card */
+  body {
+    margin: 0; padding: 16px;
+    background: #F2F4F7;
+    font-family: Roboto, "Segoe UI", system-ui, sans-serif;
+    --primary-color: #03A9F4;
+    --text-primary-color: #FFFFFF;
+    --primary-text-color: #212121;
+    --secondary-text-color: #727272;
+    --divider-color: rgba(0, 0, 0, 0.12);
+    --card-background-color: #FFFFFF;
+  }
+  body.scuro {
+    background: #111111;
+    --primary-text-color: #E1E1E1;
+    --secondary-text-color: #9B9B9B;
+    --divider-color: rgba(225, 225, 225, 0.12);
+    --card-background-color: #1C1C1C;
+  }
+  .posto { margin: 0 0 20px; }
+</style>
+</head>
+<body>
+<div id="plancia"></div>
+<script type="module">
+// ha-card come in Home Assistant: un riquadro col suo sfondo, il contenuto passa dallo slot
+customElements.define("ha-card", class extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" }).innerHTML = `<style>:host { display: block; border-radius: 12px;
+      background: var(--ha-card-background, var(--card-background-color, #fff)); color: var(--primary-text-color);
+      box-shadow: 0 2px 6px rgba(0,0,0,.12); }</style><slot></slot>`;
+  }
+});
+
+const casi = await import("./casi.js");
+await import("../../custom_components/nexus_irrigation/www/nexus-irrigation-card.js");
+
+const carte = {};
+const hassDi = {};
+window.casi = casi;
+window.carte = carte;
+
+/** Una scheda in un posto largo `larghezza` px, con i suoi stati e il suo registro delle chiamate. */
+window.nuova = (nome, config, stati, { larghezza = 900, scuro = false } = {}) => {
+  const posto = document.createElement("div");
+  posto.className = "posto";
+  posto.style.width = `${larghezza}px`;
+  posto.dataset.nome = nome;
+  const carta = document.createElement("nexus-irrigation-card");
+  carta.setConfig({ type: "custom:nexus-irrigation-card", ...config });
+  hassDi[nome] = casi.fintoHass(stati, scuro);
+  carta.hass = hassDi[nome];
+  posto.appendChild(carta);
+  document.getElementById("plancia").appendChild(posto);
+  carte[nome] = carta;
+  return true;
+};
+
+/** Nuovi stati alla stessa scheda, come fa Home Assistant: un oggetto hass nuovo, le chiamate restano. */
+window.aggiorna = (nome, stati, scuro = false) => {
+  const vecchio = hassDi[nome];
+  hassDi[nome] = casi.fintoHass(stati, scuro, vecchio.chiamate);
+  carte[nome].hass = hassDi[nome];
+  return true;
+};
+
+window.chiamate = (nome) => hassDi[nome].chiamate;
+window.togli = (nome) => {
+  const carta = carte[nome];
+  carta.parentElement.remove();
+  delete carte[nome];
+  return true;
+};
+window.pronto = true;
+</script>
+</body>
+</html>

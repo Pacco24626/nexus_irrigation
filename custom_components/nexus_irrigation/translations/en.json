@@ -10,10 +10,11 @@
       },
       "zone": {
         "title": "Zone {number}",
-        "description": "Pick the zone valve and its base duration. The duration stays editable from the dashboard.",
+        "description": "Pick the zone valve, its type and its base duration. The type tells the card how to draw it; the duration stays editable from the dashboard.",
         "data": {
           "name": "Zone name",
           "entity_id": "Valve",
+          "type": "Zone type",
           "minutes": "Base duration",
           "add_another": "Add another zone"
         }
@@ -80,6 +81,7 @@
         "data": {
           "name": "Zone name",
           "entity_id": "Valve",
+          "type": "Zone type",
           "minutes": "Base duration",
           "add_another": "Add another zone"
         }
@@ -138,6 +140,12 @@
         "cool_season": "Cool season — ryegrass, fescue, bluegrass (Kc 0.85)",
         "warm_season": "Warm season — bermuda, zoysia (Kc 0.75)",
         "custom": "Custom — I set the Kc myself"
+      }
+    },
+    "zone_type": {
+      "options": {
+        "lawn": "Lawn (sprinklers)",
+        "drip": "Drip"
       }
     }
   },

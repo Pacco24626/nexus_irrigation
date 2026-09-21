@@ -50,6 +50,7 @@ from .const import (
     CONF_ZONE_ID,
     CONF_ZONE_MINUTES,
     CONF_ZONE_NAME,
+    CONF_ZONE_TYPE,
     CONF_ZONES,
     DEFAULT_MASTER_LAG,
     DEFAULT_MASTER_LEAD,
@@ -74,6 +75,7 @@ from .const import (
     TENTATIVI_APERTURA,
     DEFAULT_SEASONAL,
     DEFAULT_START_HOUR,
+    DEFAULT_ZONE_TYPE,
     DOMAIN,
     PAUSE_BETWEEN_ZONES,
     RAIN_NONE,
@@ -86,6 +88,7 @@ from .const import (
     STATUS_RUNNING,
     WATCHDOG_INTERVAL,
     WATCHDOG_STRIKES,
+    ZONE_TYPES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -108,6 +111,8 @@ class Zone:
     # E' la versione economica dei programmi separati per zona: il prato a
     # ogni giro, la siepe una volta su tre.
     divider: int = field(default=1)
+    # Prato o goccia: solo per il disegno della scheda.
+    tipo: str = field(default=DEFAULT_ZONE_TYPE)
 
     def __post_init__(self) -> None:
         if not self.duration:
@@ -129,6 +134,10 @@ class IrrigationController:
                 name=z[CONF_ZONE_NAME],
                 entity_id=z[CONF_ZONE_ENTITY],
                 minutes=float(z[CONF_ZONE_MINUTES]),
+                # Le zone salvate prima della 1.6.0 non hanno il tipo.
+                tipo=z[CONF_ZONE_TYPE]
+                if z.get(CONF_ZONE_TYPE) in ZONE_TYPES
+                else DEFAULT_ZONE_TYPE,
             )
             for z in cfg.get(CONF_ZONES, [])
         ]
@@ -206,6 +215,19 @@ class IrrigationController:
         self._reserve_updated: datetime | None = None
         self._unsub_rain: CALLBACK_TYPE | None = None
         self.master_open: bool = False
+
+        # --- Il giro, come lo disegna la scheda ------------------------------
+        # Le zone del giro si fissano alla partenza; None da fermo, e allora
+        # il giro mostrato e' il prossimo. Fatte e non aperte si azzerano alla
+        # partenza di ogni giro o zona a mano, non alla fine: a giro finito
+        # dicono com'e' andato, come zone_non_aperte.
+        self._giro: list[str] | None = None
+        self.ciclo_fatte: list[str] = []
+        self.ciclo_non_aperte: list[str] = []
+        # La valvola della zona attiva e' comandata ma non ha ancora
+        # confermato l'apertura.
+        self.in_apertura: bool = False
+        self.manuale: bool = False
 
         self._task: asyncio.Task | None = None
         self._unsub_schedule: CALLBACK_TYPE | None = None
@@ -416,6 +438,43 @@ class IrrigationController:
             return True
         return self.cycle_count % passo == 0
 
+    def ciclo(self) -> list[str]:
+        """Le zone del giro in corso o, da fermo, del prossimo.
+
+        Sempre una lista nuova: Home Assistant confronta gli attributi con
+        quelli salvati, che ne terrebbero solo il riferimento.
+        """
+        if self._giro is not None:
+            # Il giro fissa le zone che toccano; i secondi il ciclo li ricalcola
+            # al turno di ogni zona, quindi anche qui si guardano adesso: una
+            # zona portata a 0 minuti a giro in corso verra' saltata, una
+            # riportata sopra lo zero verra' irrigata.
+            return [
+                z.id
+                for z in self.zones
+                if z.id in self._giro
+                and (
+                    self.zone_seconds(z) > 0
+                    or z.id == self.active_zone
+                    or z.id in self.ciclo_fatte
+                    or z.id in self.ciclo_non_aperte
+                )
+            ]
+        return [z.id for z in self.zones if self.zona_tocca(z) and self.zone_seconds(z) > 0]
+
+    def _inizia_giro(self, zone_ids: list[str], manuale: bool = False) -> None:
+        """Fissa le zone del giro che parte, con niente di fatto o fallito."""
+        self._giro = zone_ids
+        self.ciclo_fatte = []
+        self.ciclo_non_aperte = []
+        self.manuale = manuale
+
+    def _chiudi_giro(self) -> None:
+        """Giro finito o arrestato: da qui la scheda mostra il prossimo."""
+        self._giro = None
+        self.in_apertura = False
+        self.manuale = False
+
     async def _async_scheduled_start(self, _now: datetime) -> None:
         self._unsub_schedule = None
         await self.async_start_cycle()
@@ -465,11 +524,26 @@ class IrrigationController:
         self.status = STATUS_IDLE
         self.active_zone = None
         self.zone_ends_at = None
+        # Anche per un task annullato prima ancora di partire, che non passa
+        # dai finally.
+        self._chiudi_giro()
         self.notify()
 
     def zone_seconds(self, zone: Zone) -> int:
         """Durata effettiva della zona, fattore stagionale applicato."""
         return int(round(zone.duration * (self.seasonal / 100.0) * 60))
+
+    @property
+    def pausa_fra_zone(self) -> int:
+        """Secondi di pausa fra una zona e la successiva.
+
+        La pausa deve coprire anche il lag del master, altrimenti il settore
+        successivo aprirebbe mentre il precedente si sta ancora chiudendo, con
+        due zone in pressione insieme.
+        """
+        if self.master_entity:
+            return max(PAUSE_BETWEEN_ZONES, self.master_lag + 5)
+        return PAUSE_BETWEEN_ZONES
 
     async def _async_run_cycle(self, check_rain: bool) -> None:
         try:
@@ -489,20 +563,14 @@ class IrrigationController:
 
             self.zone_non_aperte = []
             da_irrigare = [z for z in self.zones if self.zona_tocca(z)]
+            self._inizia_giro([z.id for z in da_irrigare])
             for index, zone in enumerate(da_irrigare):
                 seconds = self.zone_seconds(zone)
                 if seconds <= 0:
                     continue
                 await self._async_run_zone(zone, seconds)
                 if index < len(da_irrigare) - 1:
-                    # La pausa deve coprire anche il lag del master, altrimenti
-                    # il settore successivo aprirebbe mentre il precedente si
-                    # sta ancora chiudendo, con due zone in pressione insieme.
-                    await asyncio.sleep(
-                        max(PAUSE_BETWEEN_ZONES, self.master_lag + 5)
-                        if self.master_entity
-                        else PAUSE_BETWEEN_ZONES
-                    )
+                    await asyncio.sleep(self.pausa_fra_zone)
 
             self.last_cycle = dt_util.now()
             self.cycle_count += 1
@@ -512,10 +580,12 @@ class IrrigationController:
             self.zone_ends_at = None
             if self.status == STATUS_RUNNING:
                 self.status = STATUS_IDLE
+            self._chiudi_giro()
             self.reschedule()
 
     async def _async_single_zone(self, zone: Zone) -> None:
         seconds = self.zone_seconds(zone)
+        self._inizia_giro([zone.id], manuale=True)
         try:
             if seconds > 0:
                 await self._async_run_zone(zone, seconds)
@@ -524,6 +594,7 @@ class IrrigationController:
             self.status = STATUS_IDLE
             self.active_zone = None
             self.zone_ends_at = None
+            self._chiudi_giro()
             self.notify()
 
     def _credit_irrigation(self, seconds: int) -> None:
@@ -555,6 +626,8 @@ class IrrigationController:
             acqua_da = dt_util.now()
             self.notify()
             await asyncio.sleep(seconds)
+            # Solo qui: una zona interrotta da un arresto non e' fatta.
+            self.ciclo_fatte.append(zone.id)
         finally:
             # Si accredita l'acqua effettivamente distribuita, non quella
             # programmata: un ciclo interrotto a meta' ha bagnato a meta'.
@@ -592,30 +665,39 @@ class IrrigationController:
         vedere l'equivalente: una valvola comandata che non si dichiara aperta.
         Senza questo controllo la zona irriga per zero minuti senza dire nulla.
         """
-        for tentativo in range(1, TENTATIVI_APERTURA + 1):
-            await self._async_set_valve(zone.entity_id, True)
-            if await self._async_attendi_apertura(zone.entity_id):
-                if tentativo > 1:
-                    _LOGGER.info(
-                        "%s: la zona %s si e' aperta al tentativo %s",
-                        self.name, zone.name, tentativo,
-                    )
-                return True
+        self.in_apertura = True
+        self.notify()
+        try:
+            for tentativo in range(1, TENTATIVI_APERTURA + 1):
+                await self._async_set_valve(zone.entity_id, True)
+                if await self._async_attendi_apertura(zone.entity_id):
+                    if tentativo > 1:
+                        _LOGGER.info(
+                            "%s: la zona %s si e' aperta al tentativo %s",
+                            self.name, zone.name, tentativo,
+                        )
+                    return True
 
-        _LOGGER.warning(
-            "%s: la zona %s non conferma l'apertura dopo %s tentativi, saltata",
-            self.name, zone.name, TENTATIVI_APERTURA,
-        )
-        if zone.name not in self.zone_non_aperte:
-            self.zone_non_aperte.append(zone.name)
-        persistent_notification.async_create(
-            self.hass,
-            f"La zona {zone.name} di {self.name} non ha confermato l'apertura "
-            f"ed e' stata saltata. Controllare la valvola o il suo collegamento.",
-            title="Zona non aperta",
-            notification_id=f"{DOMAIN}_{self.entry.entry_id}_zona_{zone.id}",
-        )
-        return False
+            _LOGGER.warning(
+                "%s: la zona %s non conferma l'apertura dopo %s tentativi, saltata",
+                self.name, zone.name, TENTATIVI_APERTURA,
+            )
+            if zone.name not in self.zone_non_aperte:
+                self.zone_non_aperte.append(zone.name)
+            if zone.id not in self.ciclo_non_aperte:
+                self.ciclo_non_aperte.append(zone.id)
+            persistent_notification.async_create(
+                self.hass,
+                f"La zona {zone.name} di {self.name} non ha confermato l'apertura "
+                f"ed e' stata saltata. Controllare la valvola o il suo collegamento.",
+                title="Zona non aperta",
+                notification_id=f"{DOMAIN}_{self.entry.entry_id}_zona_{zone.id}",
+            )
+            return False
+        finally:
+            # Anche con un arresto durante l'attesa della conferma.
+            self.in_apertura = False
+            self.notify()
 
     async def _async_attendi_apertura(self, entity_id: str) -> bool:
         scadenza = self.hass.loop.time() + ATTESA_APERTURA

@@ -10,10 +10,11 @@
       },
       "zone": {
         "title": "Zona {number}",
-        "description": "Scegli la valvola della zona e la durata base. La durata resta modificabile dalla dashboard.",
+        "description": "Scegli la valvola della zona, il tipo e la durata base. Il tipo dice alla scheda come disegnarla; la durata resta modificabile dalla dashboard.",
         "data": {
           "name": "Nome zona",
           "entity_id": "Valvola",
+          "type": "Tipo di zona",
           "minutes": "Durata base",
           "add_another": "Aggiungi un'altra zona"
         }
@@ -80,6 +81,7 @@
         "data": {
           "name": "Nome zona",
           "entity_id": "Valvola",
+          "type": "Tipo di zona",
           "minutes": "Durata base",
           "add_another": "Aggiungi un'altra zona"
         }
@@ -138,6 +140,12 @@
         "cool_season": "Microterme — loietto, festuca, poa (Kc 0,85)",
         "warm_season": "Macroterme — gramigna, zoysia (Kc 0,75)",
         "custom": "Personalizzato — imposto il Kc a mano"
+      }
+    },
+    "zone_type": {
+      "options": {
+        "lawn": "Prato (irrigatori)",
+        "drip": "Goccia"
       }
     }
   },
