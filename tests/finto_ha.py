@@ -193,6 +193,7 @@ _modulo(
 )
 _modulo(
     "homeassistant.const",
+    EntityCategory=types.SimpleNamespace(CONFIG="config", DIAGNOSTIC="diagnostic"),
     EVENT_HOMEASSISTANT_STARTED="homeassistant_started",
     STATE_UNAVAILABLE="unavailable",
     STATE_UNKNOWN="unknown",
@@ -337,6 +338,12 @@ async def async_get_integration(hass, dominio: str):
         return types.SimpleNamespace(version=json.load(f)["version"])
 
 
+# Bastano i nomi: di queste piattaforme il banco guarda solo gli attributi
+# di classe, non il comportamento.
+# Classi vuote e non `object`, o l'ordine di risoluzione dei metodi va in
+# conflitto con RestoreEntity.
+_modulo("homeassistant.components.switch", SwitchEntity=type("SwitchEntity", (), {}))
+_modulo("homeassistant.components.select", SelectEntity=type("SelectEntity", (), {}))
 _modulo("homeassistant.components.frontend", add_extra_js_url=lambda hass, url: JS_EXTRA.append(url))
 _modulo("homeassistant.components.http", StaticPathConfig=StaticPathConfig)
 _modulo("homeassistant.loader", async_get_integration=async_get_integration)

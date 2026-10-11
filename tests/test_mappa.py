@@ -16,6 +16,7 @@ quelle marcate «controllo» passano su entrambe e dicono che il banco regge.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import os
@@ -40,6 +41,11 @@ esiti = Esiti("MAPPA")
 v = esiti.verifica
 
 URL_SCHEDA = "/nexus_irrigation/nexus-irrigation-card.js"
+# La versione si legge dal manifest, non si inchioda: un banco da aggiornare a
+# ogni rilascio e' un banco che prima o poi viene spento invece che corretto.
+_COMPONENTE = os.path.join(finto_ha._SRC, "nexus_irrigation")
+with open(os.path.join(_COMPONENTE, "manifest.json"), encoding="utf-8") as _f:
+    VERSIONE = json.load(_f)["version"]
 VECCHIA = {
     "id": "r1",
     "res_type": "module",
@@ -468,9 +474,32 @@ def caso_file() -> None:
     with open(os.path.join(base, "manifest.json"), encoding="utf-8") as f:
         manifest = json.load(f)
     v(manifest["domain"] == "nexus_irrigation", "controllo: manifest letto")
-    v(manifest["version"] == "1.6.0", f"versione 1.6.0 (e' {manifest['version']})")
+    # Non «e' la versione X», che andrebbe riscritto a ogni rilascio, ma: il
+    # manifest e la scheda dicono la stessa cosa. Se divergono, l'indirizzo
+    # della risorsa cambia mentre il banner in console resta indietro, e il
+    # banner smette di essere una prova di che cosa sta girando davvero.
+    with open(os.path.join(base, "www", "nexus-irrigation-card.js"),
+              encoding="utf-8") as f:
+        dentro = f.read()
+    attesa = f'const VERSIONE_CARD = "{manifest["version"]}";'
+    v(attesa in dentro,
+      f"manifest e scheda dicono la stessa versione ({manifest['version']})")
     v(set(manifest["dependencies"]) == {"persistent_notification", "http", "frontend", "lovelace"},
       f"dipendenze per servire e registrare la scheda (sono {manifest['dependencies']})")
+
+    # Chi governa il comportamento sta in «config» e Home Assistant non lo
+    # espone agli assistenti vocali; chi apre davvero una valvola resta
+    # comandabile a voce, che e' il motivo per cui uno l'ha in casa.
+    from nexus_irrigation import select as _sel, switch as _sw  # noqa: PLC0415
+
+    def _categoria(classe):
+        return getattr(classe, "_attr_entity_category", None)
+
+    for classe in (_sw.EnableSwitch, _sw.RainBypassSwitch, _sw.DaySwitch, _sel.DayModeSelect):
+        v(_categoria(classe) == "config", f"{classe.__name__}: categoria «config»")
+    for classe in (_sw.ZoneManualSwitch,):
+        v(_categoria(classe) is None,
+          f"{classe.__name__}: nessuna categoria, le valvole restano comandabili a voce")
 
 
 # --- 10. registrazione della scheda -------------------------------------------------
@@ -530,7 +559,7 @@ async def caso_registrazione() -> None:
     v(registra is not None, "l'integrazione ha la registrazione della scheda")
     if registra is None:
         return
-    url = f"{URL_SCHEDA}?v=1.6.0"
+    url = f"{URL_SCHEDA}?v={VERSIONE}"
 
     azzera()
     LOG.messaggi.clear()

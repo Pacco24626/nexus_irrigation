@@ -16,7 +16,7 @@
  * tests/card/test_card.mjs; il disegno e i comandi: tests/card/prova_browser.js
  */
 
-const VERSIONE_CARD = "1.6.0";
+const VERSIONE_CARD = "1.6.1";
 const DOMINIO = "nexus_irrigation";
 const RUOLO_MAPPA = "mappa_irrigazione";
 const ELEMENTO = "nexus-irrigation-card";

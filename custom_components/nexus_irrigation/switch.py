@@ -6,6 +6,7 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -34,6 +35,10 @@ class EnableSwitch(IrrigationEntity, SwitchEntity, RestoreEntity):
     """Interruttore generale: da spegnere in vacanza o a stagione finita."""
 
     _attr_name = "Abilitata"
+    # Governa un comportamento, non e' un dispositivo da accendere: con la
+    # categoria «config» Home Assistant non lo espone agli assistenti vocali,
+    # dove un comando generico se lo porterebbe via insieme alle lampade.
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:sprinkler-variant"
 
     def __init__(self, controller: IrrigationController) -> None:
@@ -64,6 +69,7 @@ class RainBypassSwitch(IrrigationEntity, SwitchEntity, RestoreEntity):
     """
 
     _attr_name = "Ignora la pioggia"
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:weather-cloudy-alert"
 
     def __init__(self, controller: IrrigationController) -> None:
@@ -88,7 +94,7 @@ class DaySwitch(IrrigationEntity, SwitchEntity, RestoreEntity):
     """Un giorno della settimana in cui il ciclo automatico puo' partire."""
 
     _attr_icon = "mdi:calendar"
-    _attr_entity_category = None
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, controller: IrrigationController, index: int) -> None:
         super().__init__(controller, f"{KEY_DAY_PREFIX}{DAY_KEYS[index]}")

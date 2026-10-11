@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -35,6 +36,10 @@ class DayModeSelect(IrrigationEntity, SelectEntity, RestoreEntity):
     """
 
     _attr_name = "Modalita' giorni"
+    # Governa un comportamento, non e' un dispositivo da accendere: con la
+    # categoria «config» Home Assistant non lo espone agli assistenti vocali,
+    # dove un comando generico se lo porterebbe via insieme alle lampade.
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:calendar-sync"
     _attr_options = MODI_GIORNI
     _attr_translation_key = "day_mode"
