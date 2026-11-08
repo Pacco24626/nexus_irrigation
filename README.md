@@ -19,10 +19,11 @@ dall'interfaccia. Nessuno YAML da scrivere.
 
 ## Installazione via HACS
 
-1. HACS → menu ⋮ → **Repository personalizzate**
-2. URL `https://github.com/Pacco24626/nexus_irrigation`, categoria **Integration**
-3. Installa, poi **riavvia Home Assistant**
-4. **Impostazioni → Dispositivi e servizi → Aggiungi integrazione → Nexus Irrigation**
+1. In **HACS** — da Home Assistant 2026.11 si chiama **Marketplace**, in *Impostazioni* — cerca **Nexus Irrigation** e installala
+2. **Riavvia Home Assistant**
+3. **Impostazioni → Dispositivi e servizi → Aggiungi integrazione → Nexus Irrigation**
+
+> Per provare una versione non ancora pubblicata si può aggiungere questo repository a mano, come *repository personalizzato* di categoria **Integration**: `https://github.com/Pacco24626/nexus_irrigation`
 
 Requisiti: Home Assistant 2024.12 o superiore.
 
